@@ -35,7 +35,7 @@ def channel_shuffle(x: Tensor, groups: int) -> Tensor:
     x = torch.transpose(x, 1, 2).contiguous()
 
     # flatten
-    x = x.view(batchsize, -1, height, width)
+    x = x.view(batchsize, num_channels, height, width)
 
     return x
 
@@ -178,7 +178,7 @@ def _shufflenetv2(
     model = ShuffleNetV2(*args, **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -204,6 +204,8 @@ class ShuffleNet_V2_X0_5_Weights(WeightsEnum):
                     "acc@5": 81.746,
                 }
             },
+            "_ops": 0.04,
+            "_file_size": 5.282,
             "_docs": """These weights were trained from scratch to reproduce closely the results of the paper.""",
         },
     )
@@ -224,6 +226,8 @@ class ShuffleNet_V2_X1_0_Weights(WeightsEnum):
                     "acc@5": 88.316,
                 }
             },
+            "_ops": 0.145,
+            "_file_size": 8.791,
             "_docs": """These weights were trained from scratch to reproduce closely the results of the paper.""",
         },
     )
@@ -244,6 +248,8 @@ class ShuffleNet_V2_X1_5_Weights(WeightsEnum):
                     "acc@5": 91.086,
                 }
             },
+            "_ops": 0.296,
+            "_file_size": 13.557,
             "_docs": """
                 These weights were trained from scratch by using TorchVision's `new training recipe
                 <https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/>`_.
@@ -267,6 +273,8 @@ class ShuffleNet_V2_X2_0_Weights(WeightsEnum):
                     "acc@5": 93.006,
                 }
             },
+            "_ops": 0.583,
+            "_file_size": 28.433,
             "_docs": """
                 These weights were trained from scratch by using TorchVision's `new training recipe
                 <https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/>`_.
@@ -398,17 +406,3 @@ def shufflenet_v2_x2_0(
     weights = ShuffleNet_V2_X2_0_Weights.verify(weights)
 
     return _shufflenetv2(weights, progress, [4, 8, 4], [24, 244, 488, 976, 2048], **kwargs)
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from ._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "shufflenetv2_x0.5": ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1.url,
-        "shufflenetv2_x1.0": ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1.url,
-        "shufflenetv2_x1.5": None,
-        "shufflenetv2_x2.0": None,
-    }
-)

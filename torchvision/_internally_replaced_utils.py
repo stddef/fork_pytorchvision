@@ -6,6 +6,7 @@ from torch.hub import _get_torch_home
 
 _HOME = os.path.join(_get_torch_home(), "datasets", "vision")
 _USE_SHARDED_DATASETS = False
+IN_FBCODE = False
 
 
 def _download_file_from_remote_location(fpath: str, url: str) -> None:
@@ -28,7 +29,6 @@ def _get_extension_path(lib_name):
     if os.name == "nt":
         # Register the main torchvision library location on the default DLL path
         import ctypes
-        import sys
 
         kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
         with_load_library_flags = hasattr(kernel32, "AddDllDirectory")
@@ -37,14 +37,7 @@ def _get_extension_path(lib_name):
         if with_load_library_flags:
             kernel32.AddDllDirectory.restype = ctypes.c_void_p
 
-        if sys.version_info >= (3, 8):
-            os.add_dll_directory(lib_dir)
-        elif with_load_library_flags:
-            res = kernel32.AddDllDirectory(lib_dir)
-            if res is None:
-                err = ctypes.WinError(ctypes.get_last_error())
-                err.strerror += f' Error adding "{lib_dir}" to the DLL directories.'
-                raise err
+        os.add_dll_directory(lib_dir)
 
         kernel32.SetErrorMode(prev_error_mode)
 

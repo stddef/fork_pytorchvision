@@ -25,7 +25,7 @@ class BalancedPositiveNegativeSampler:
     def __call__(self, matched_idxs: List[Tensor]) -> Tuple[List[Tensor], List[Tensor]]:
         """
         Args:
-            matched idxs: list of tensors containing -1, 0 or positive values.
+            matched_idxs: list of tensors containing -1, 0 or positive values.
                 Each tensor corresponds to a specific image.
                 -1 values are ignored, 0 are considered as negatives and > 0 as
                 positives.
@@ -403,22 +403,14 @@ class Matcher:
         it is unmatched, then match it to the ground-truth with which it has the highest
         quality value.
         """
-        # For each gt, find the prediction with which it has highest quality
+        # For each gt, find the prediction with which it has the highest quality
         highest_quality_foreach_gt, _ = match_quality_matrix.max(dim=1)
-        # Find highest quality match available, even if it is low, including ties
+        # Find the highest quality match available, even if it is low, including ties
         gt_pred_pairs_of_highest_quality = torch.where(match_quality_matrix == highest_quality_foreach_gt[:, None])
         # Example gt_pred_pairs_of_highest_quality:
-        #   tensor([[    0, 39796],
-        #           [    1, 32055],
-        #           [    1, 32070],
-        #           [    2, 39190],
-        #           [    2, 40255],
-        #           [    3, 40390],
-        #           [    3, 41455],
-        #           [    4, 45470],
-        #           [    5, 45325],
-        #           [    5, 46390]])
-        # Each row is a (gt index, prediction index)
+        # (tensor([0, 1, 1, 2, 2, 3, 3, 4, 5, 5]),
+        #  tensor([39796, 32055, 32070, 39190, 40255, 40390, 41455, 45470, 45325, 46390]))
+        # Each element in the first tensor is a gt index, and each element in second tensor is a prediction index
         # Note how gt items 1, 2, 3, and 5 each have two ties
 
         pred_inds_to_update = gt_pred_pairs_of_highest_quality[1]
@@ -501,14 +493,14 @@ def _topk_min(input: Tensor, orig_kval: int, axis: int) -> int:
     if K exceeds the number of elements along that axis. Previously, python's min() function was
     used to determine whether to use the provided k-value or the specified dim axis value.
 
-    However in cases where the model is being exported in tracing mode, python min() is
+    However, in cases where the model is being exported in tracing mode, python min() is
     static causing the model to be traced incorrectly and eventually fail at the topk node.
     In order to avoid this situation, in tracing mode, torch.min() is used instead.
 
     Args:
-        input (Tensor): The orignal input tensor.
+        input (Tensor): The original input tensor.
         orig_kval (int): The provided k-value.
-        axis(int): Axis along which we retreive the input size.
+        axis(int): Axis along which we retrieve the input size.
 
     Returns:
         min_kval (int): Appropriately selected k-value.

@@ -7,7 +7,13 @@ import torch
 import torchvision
 from pytest import approx
 from torchvision.datasets.utils import download_url
-from torchvision.io import _HAS_VIDEO_OPT, VideoReader
+from torchvision.io import _HAS_CPU_VIDEO_DECODER, VideoReader
+
+
+# WARNING: these tests have been skipped forever on the CI because the video ops
+# are never properly available. This is bad, but things have been in a terrible
+# state for a long time already as we write this comment, and we'll hopefully be
+# able to get rid of this all soon.
 
 
 try:
@@ -23,6 +29,13 @@ VIDEO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "
 
 CheckerConfig = ["duration", "video_fps", "audio_sample_rate"]
 GroundTruth = collections.namedtuple("GroundTruth", " ".join(CheckerConfig))
+
+
+def backends():
+    backends_ = ["video_reader"]
+    if av is not None:
+        backends_.append("pyav")
+    return backends_
 
 
 def fate(name, path="."):
@@ -49,11 +62,13 @@ test_videos = {
 }
 
 
-@pytest.mark.skipif(_HAS_VIDEO_OPT is False, reason="Didn't compile with ffmpeg")
+@pytest.mark.skipif(_HAS_CPU_VIDEO_DECODER is False, reason="Didn't compile with ffmpeg")
 class TestVideoApi:
     @pytest.mark.skipif(av is None, reason="PyAV unavailable")
     @pytest.mark.parametrize("test_video", test_videos.keys())
-    def test_frame_reading(self, test_video):
+    @pytest.mark.parametrize("backend", backends())
+    def test_frame_reading(self, test_video, backend):
+        torchvision.set_video_backend(backend)
         full_path = os.path.join(VIDEO_DIR, test_video)
         with av.open(full_path) as av_reader:
             if av_reader.streams.video:
@@ -77,6 +92,7 @@ class TestVideoApi:
                 # compare the frames and ptss
                 for i in range(len(vr_frames)):
                     assert float(av_pts[i]) == approx(vr_pts[i], abs=0.1)
+
                     mean_delta = torch.mean(torch.abs(av_frames[i].float() - vr_frames[i].float()))
                     # on average the difference is very small and caused
                     # by decoding (around 1%)
@@ -114,12 +130,62 @@ class TestVideoApi:
                     # we assure that there is never more than 1% difference in signal
                     assert max_delta.item() < 0.001
 
+    @pytest.mark.parametrize("stream", ["video", "audio"])
+    @pytest.mark.parametrize("test_video", test_videos.keys())
+    @pytest.mark.parametrize("backend", backends())
+    def test_frame_reading_mem_vs_file(self, test_video, stream, backend):
+        torchvision.set_video_backend(backend)
+        full_path = os.path.join(VIDEO_DIR, test_video)
+
+        reader = VideoReader(full_path)
+        reader_md = reader.get_metadata()
+
+        if stream in reader_md:
+            # Test video reading from file vs from memory
+            vr_frames, vr_frames_mem = [], []
+            vr_pts, vr_pts_mem = [], []
+            # get vr frames
+            video_reader = VideoReader(full_path, stream)
+            for vr_frame in video_reader:
+                vr_frames.append(vr_frame["data"])
+                vr_pts.append(vr_frame["pts"])
+
+            # get vr frames = read from memory
+            f = open(full_path, "rb")
+            fbytes = f.read()
+            f.close()
+            video_reader_from_mem = VideoReader(fbytes, stream)
+
+            for vr_frame_from_mem in video_reader_from_mem:
+                vr_frames_mem.append(vr_frame_from_mem["data"])
+                vr_pts_mem.append(vr_frame_from_mem["pts"])
+
+            # same number of frames
+            assert len(vr_frames) == len(vr_frames_mem)
+            assert len(vr_pts) == len(vr_pts_mem)
+
+            # compare the frames and ptss
+            for i in range(len(vr_frames)):
+                assert vr_pts[i] == vr_pts_mem[i]
+                mean_delta = torch.mean(torch.abs(vr_frames[i].float() - vr_frames_mem[i].float()))
+                # on average the difference is very small and caused
+                # by decoding (around 1%)
+                # TODO: asses empirically how to set this? atm it's 1%
+                # averaged over all frames
+                assert mean_delta.item() < 2.55
+
+            del vr_frames, vr_pts, vr_frames_mem, vr_pts_mem
+        else:
+            del reader, reader_md
+
     @pytest.mark.parametrize("test_video,config", test_videos.items())
-    def test_metadata(self, test_video, config):
+    @pytest.mark.parametrize("backend", backends())
+    def test_metadata(self, test_video, config, backend):
         """
         Test that the metadata returned via pyav corresponds to the one returned
         by the new video decoder API
         """
+        torchvision.set_video_backend(backend)
         full_path = os.path.join(VIDEO_DIR, test_video)
         reader = VideoReader(full_path, "video")
         reader_md = reader.get_metadata()
@@ -127,7 +193,9 @@ class TestVideoApi:
         assert config.duration == approx(reader_md["video"]["duration"][0], abs=0.5)
 
     @pytest.mark.parametrize("test_video", test_videos.keys())
-    def test_seek_start(self, test_video):
+    @pytest.mark.parametrize("backend", backends())
+    def test_seek_start(self, test_video, backend):
+        torchvision.set_video_backend(backend)
         full_path = os.path.join(VIDEO_DIR, test_video)
         video_reader = VideoReader(full_path, "video")
         num_frames = 0
@@ -153,7 +221,9 @@ class TestVideoApi:
         assert start_num_frames == num_frames
 
     @pytest.mark.parametrize("test_video", test_videos.keys())
-    def test_accurateseek_middle(self, test_video):
+    @pytest.mark.parametrize("backend", ["video_reader"])
+    def test_accurateseek_middle(self, test_video, backend):
+        torchvision.set_video_backend(backend)
         full_path = os.path.join(VIDEO_DIR, test_video)
         stream = "video"
         video_reader = VideoReader(full_path, stream)
@@ -192,7 +262,9 @@ class TestVideoApi:
 
     @pytest.mark.skipif(av is None, reason="PyAV unavailable")
     @pytest.mark.parametrize("test_video,config", test_videos.items())
-    def test_keyframe_reading(self, test_video, config):
+    @pytest.mark.parametrize("backend", backends())
+    def test_keyframe_reading(self, test_video, config, backend):
+        torchvision.set_video_backend(backend)
         full_path = os.path.join(VIDEO_DIR, test_video)
 
         av_reader = av.open(full_path)
@@ -226,6 +298,14 @@ class TestVideoApi:
             if test_video != "TrumanShow_wave_f_nm_np1_fr_med_26.avi":
                 for i in range(len(av_keyframes)):
                     assert av_keyframes[i] == approx(vr_keyframes[i], rel=0.001)
+
+    def test_src(self):
+        with pytest.raises(ValueError, match="src cannot be empty"):
+            VideoReader(src="")
+        with pytest.raises(ValueError, match="src must be either string"):
+            VideoReader(src=2)
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+            VideoReader(path="path")
 
 
 if __name__ == "__main__":

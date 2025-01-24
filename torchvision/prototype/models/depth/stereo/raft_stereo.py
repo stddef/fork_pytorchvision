@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Callable, List, Optional, Tuple
 
 import torch
@@ -5,10 +6,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models.optical_flow.raft as raft
 from torch import Tensor
-from torchvision.models._api import register_model, WeightsEnum
+from torchvision.models._api import register_model, Weights, WeightsEnum
+from torchvision.models._utils import handle_legacy_interface
 from torchvision.models.optical_flow._utils import grid_sample, make_coords_grid, upsample_flow
 from torchvision.models.optical_flow.raft import FlowHead, MotionEncoder, ResidualBlock
 from torchvision.ops import Conv2dNormActivation
+from torchvision.prototype.transforms._presets import StereoMatching
 from torchvision.utils import _log_api_usage_once
 
 
@@ -50,7 +53,7 @@ class BaseEncoder(raft.FeatureEncoder):
 class FeatureEncoder(nn.Module):
     """Feature Encoder for Raft-Stereo (see paper section 3.1) that may have shared weight with the Context Encoder.
 
-    The FeatureEncoder takes concatination of left and right image as input, it produce feature embedding that later
+    The FeatureEncoder takes concatenation of left and right image as input. It produces feature embedding that later
     will be used to construct correlation volume.
     """
 
@@ -86,7 +89,7 @@ class FeatureEncoder(nn.Module):
 class MultiLevelContextEncoder(nn.Module):
     """Context Encoder for Raft-Stereo (see paper section 3.1) that may have shared weight with the Feature Encoder.
 
-    The ContextEncoder takes left image as input and it outputs concatenated hidden_states and contexts.
+    The ContextEncoder takes left image as input, and it outputs concatenated hidden_states and contexts.
     In Raft-Stereo we have multi level GRUs and this context encoder will also multi outputs (list of Tensor)
     that correspond to each GRUs.
     Take note that the length of "out_with_blocks" parameter represent the number of GRU's level.
@@ -177,7 +180,7 @@ class MultiLevelUpdateBlock(nn.Module):
 
         # The GRU input size is the size of previous level hidden_dim plus next level hidden_dim
         # if this is the first gru, then we replace previous level with motion_encoder output channels
-        # for the last GRU, we dont add the next level hidden_dim
+        # for the last GRU, we don't add the next level hidden_dim
         gru_input_dims = []
         for i in range(len(hidden_dims)):
             input_dim = hidden_dims[i - 1] if i > 0 else motion_encoder.out_channels
@@ -188,8 +191,8 @@ class MultiLevelUpdateBlock(nn.Module):
         self.grus = nn.ModuleList(
             [
                 ConvGRU(input_size=gru_input_dims[i], hidden_size=hidden_dims[i], kernel_size=3, padding=1)
-                # Ideally we should reverse the direction during forward to use the gru with smallest resolution first
-                # however currently there is no way to reverse a ModuleList that is jit script compatible
+                # Ideally we should reverse the direction during forward to use the gru with the smallest resolution
+                # first however currently there is no way to reverse a ModuleList that is jit script compatible
                 # hence we reverse the ordering of self.grus on the constructor instead
                 # see: https://github.com/pytorch/pytorch/issues/31772
                 for i in reversed(list(range(len(hidden_dims))))
@@ -203,7 +206,7 @@ class MultiLevelUpdateBlock(nn.Module):
         hidden_states: List[Tensor],
         contexts: List[List[Tensor]],
         corr_features: Tensor,
-        depth: Tensor,
+        disparity: Tensor,
         level_processed: List[bool],
     ) -> List[Tensor]:
         # We call it reverse_i because it has a reversed ordering compared to hidden_states
@@ -211,10 +214,10 @@ class MultiLevelUpdateBlock(nn.Module):
         for reverse_i, gru in enumerate(self.grus):
             i = len(self.grus) - 1 - reverse_i
             if level_processed[i]:
-                # X is concatination of 2x downsampled hidden_dim (or motion_features if no bigger dim) with
+                # X is concatenation of 2x downsampled hidden_dim (or motion_features if no bigger dim) with
                 # upsampled hidden_dim (or nothing if not exist).
                 if i == 0:
-                    features = self.motion_encoder(depth, corr_features)
+                    features = self.motion_encoder(disparity, corr_features)
                 else:
                     # 2x downsampled features from larger hidden states
                     features = F.avg_pool2d(hidden_states[i - 1], kernel_size=3, stride=2, padding=1)
@@ -234,14 +237,14 @@ class MultiLevelUpdateBlock(nn.Module):
 
                 hidden_states[i] = gru(hidden_states[i], features, contexts[i])
 
-                # NOTE: For slow-fast gru, we dont always want to calculate delta depth for every call on UpdateBlock
-                # Hence we move the delta depth calculation to the RAFT-Stereo main forward
+                # NOTE: For slow-fast gru, we don't always want to calculate delta disparity for every call on UpdateBlock
+                # Hence we move the delta disparity calculation to the RAFT-Stereo main forward
 
         return hidden_states
 
 
 class MaskPredictor(raft.MaskPredictor):
-    """Mask predictor to be used when upsampling the predicted depth."""
+    """Mask predictor to be used when upsampling the predicted disparity."""
 
     # We add out_channels compared to raft.MaskPredictor
     def __init__(self, *, in_channels: int, hidden_size: int, out_channels: int, multiplier: float = 0.25):
@@ -345,7 +348,7 @@ class RaftStereo(nn.Module):
         corr_pyramid: CorrPyramid1d,
         corr_block: CorrBlock1d,
         update_block: MultiLevelUpdateBlock,
-        depth_head: nn.Module,
+        disparity_head: nn.Module,
         mask_predictor: Optional[nn.Module] = None,
         slow_fast: bool = False,
     ):
@@ -353,15 +356,15 @@ class RaftStereo(nn.Module):
         `RAFT-Stereo: Multilevel Recurrent Field Transforms for Stereo Matching <https://arxiv.org/abs/2109.07547>`_.
 
         args:
-            feature_encoder (FeatureEncoder): The feature encoder. Its input is the concatenation of ``image1`` and ``image2``.
-            context_encoder (MultiLevelContextEncoder): The context encoder. Its input is ``image1``.
+            feature_encoder (FeatureEncoder): The feature encoder. Its input is the concatenation of ``left_image`` and ``right_image``.
+            context_encoder (MultiLevelContextEncoder): The context encoder. Its input is ``left_image``.
                 It has multi-level output and each level will have 2 parts:
 
                 - one part will be used as the actual "context", passed to the recurrent unit of the ``update_block``
-                - one part will be used to initialize the hidden state of the of the recurrent unit of
+                - one part will be used to initialize the hidden state of the recurrent unit of
                   the ``update_block``
 
-            corr_pyramid (CorrPyramid1d): Module to buid the correlation pyramid from feature encoder output
+            corr_pyramid (CorrPyramid1d): Module to build the correlation pyramid from feature encoder output
             corr_block (CorrBlock1d): The correlation block, which uses the correlation pyramid indexes
                 to create correlation features. It takes the coordinate of the centroid pixel and correlation pyramid
                 as input and returns the correlation features.
@@ -369,8 +372,8 @@ class RaftStereo(nn.Module):
 
             update_block (MultiLevelUpdateBlock): The update block, which contains the motion encoder, and the recurrent unit.
                 It takes as input the hidden state of its recurrent unit, the context, the correlation
-                features, and the current predicted depth. It outputs an updated hidden state
-            depth_head (nn.Module): The depth head block will convert from the hidden state into changes in depth.
+                features, and the current predicted disparity. It outputs an updated hidden state
+            disparity_head (nn.Module): The disparity head block will convert from the hidden state into changes in disparity.
             mask_predictor (nn.Module, optional): Predicts the mask that will be used to upsample the predicted flow.
                 If ``None`` (default), the flow is upsampled using interpolation.
             slow_fast (bool): A boolean that specify whether we should use slow-fast GRU or not. See RAFT-Stereo paper
@@ -378,6 +381,10 @@ class RaftStereo(nn.Module):
         """
         super().__init__()
         _log_api_usage_once(self)
+
+        # This indicates that the disparity output will be only have 1 channel (represent horizontal axis).
+        # We need this because some stereo matching model like CREStereo might have 2 channel on the output
+        self.output_channels = 1
 
         self.feature_encoder = feature_encoder
         self.context_encoder = context_encoder
@@ -387,7 +394,7 @@ class RaftStereo(nn.Module):
         self.corr_pyramid = corr_pyramid
         self.corr_block = corr_block
         self.update_block = update_block
-        self.depth_head = depth_head
+        self.disparity_head = disparity_head
         self.mask_predictor = mask_predictor
 
         hidden_dims = self.update_block.hidden_dims
@@ -398,26 +405,29 @@ class RaftStereo(nn.Module):
         )
         self.slow_fast = slow_fast
 
-    def forward(self, image1: Tensor, image2: Tensor, num_iters: int = 12) -> List[Tensor]:
+    def forward(
+        self, left_image: Tensor, right_image: Tensor, flow_init: Optional[Tensor] = None, num_iters: int = 12
+    ) -> List[Tensor]:
         """
-        Return dept predictions on every iterations as a list of Tensor.
+        Return disparity predictions on every iteration as a list of Tensor.
         args:
-            image1 (Tensor): The input left image with layout B, C, H, W
-            image2 (Tensor): The input right image with layout B, C, H, W
+            left_image (Tensor): The input left image with layout B, C, H, W
+            right_image (Tensor): The input right image with layout B, C, H, W
+            flow_init (Optional[Tensor]): Initial estimate for the disparity. Default: None
             num_iters (int): Number of update block iteration on the largest resolution. Default: 12
         """
-        batch_size, _, h, w = image1.shape
+        batch_size, _, h, w = left_image.shape
         torch._assert(
-            (h, w) == image2.shape[-2:],
-            f"input images should have the same shape, instead got ({h}, {w}) != {image2.shape[-2:]}",
+            (h, w) == right_image.shape[-2:],
+            f"input images should have the same shape, instead got ({h}, {w}) != {right_image.shape[-2:]}",
         )
 
         torch._assert(
             (h % self.base_downsampling_ratio == 0 and w % self.base_downsampling_ratio == 0),
-            f"input image H and W should be divisible by {self.base_downsampling_ratio}, insted got H={h} and W={w}",
+            f"input image H and W should be divisible by {self.base_downsampling_ratio}, instead got H={h} and W={w}",
         )
 
-        fmaps = self.feature_encoder(torch.cat([image1, image2], dim=0))
+        fmaps = self.feature_encoder(torch.cat([left_image, right_image], dim=0))
         fmap1, fmap2 = torch.chunk(fmaps, chunks=2, dim=0)
         torch._assert(
             fmap1.shape[-2:] == (h // self.base_downsampling_ratio, w // self.base_downsampling_ratio),
@@ -427,7 +437,7 @@ class RaftStereo(nn.Module):
         corr_pyramid = self.corr_pyramid(fmap1, fmap2)
 
         # Multi level contexts
-        context_outs = self.context_encoder(image1)
+        context_outs = self.context_encoder(left_image)
 
         hidden_dims = self.update_block.hidden_dims
         context_out_channels = [context_outs[i].shape[1] - hidden_dims[i] for i in range(len(context_outs))]
@@ -440,42 +450,53 @@ class RaftStereo(nn.Module):
             hidden_state, context = torch.split(context_outs[i], [hidden_dims[i], context_out_channels[i]], dim=1)
             hidden_states.append(torch.tanh(hidden_state))
             contexts.append(
-                torch.split(context_conv(F.relu(context)), [hidden_dims[i], hidden_dims[i], hidden_dims[i]], dim=1)
+                # mypy is technically correct here. The return type of `torch.split` was incorrectly annotated with
+                # `List[int]` although it should have been `Tuple[Tensor, ...]`. However, the latter is not supported by
+                # JIT and thus we have to keep the wrong annotation here and silence mypy.
+                torch.split(  # type: ignore[arg-type]
+                    context_conv(F.relu(context)), [hidden_dims[i], hidden_dims[i], hidden_dims[i]], dim=1
+                )
             )
 
         _, Cf, Hf, Wf = fmap1.shape
         coords0 = make_coords_grid(batch_size, Hf, Wf).to(fmap1.device)
         coords1 = make_coords_grid(batch_size, Hf, Wf).to(fmap1.device)
 
-        depth_predictions = []
+        # We use flow_init for cascade inference
+        if flow_init is not None:
+            coords1 = coords1 + flow_init
+
+        disparity_predictions = []
         for _ in range(num_iters):
             coords1 = coords1.detach()  # Don't backpropagate gradients through this branch, see paper
             corr_features = self.corr_block(centroids_coords=coords1, corr_pyramid=corr_pyramid)
 
-            depth = coords1 - coords0
+            disparity = coords1 - coords0
             if self.slow_fast:
                 # Using slow_fast GRU (see paper section 3.4). The lower resolution are processed more often
                 for i in range(1, self.num_level):
                     # We only processed the smallest i levels
                     level_processed = [False] * (self.num_level - i) + [True] * i
                     hidden_states = self.update_block(
-                        hidden_states, contexts, corr_features, depth, level_processed=level_processed
+                        hidden_states, contexts, corr_features, disparity, level_processed=level_processed
                     )
             hidden_states = self.update_block(
-                hidden_states, contexts, corr_features, depth, level_processed=[True] * self.num_level
+                hidden_states, contexts, corr_features, disparity, level_processed=[True] * self.num_level
             )
-            # Take the largest hidden_state to get the depth
+            # Take the largest hidden_state to get the disparity
             hidden_state = hidden_states[0]
-            delta_depth = self.depth_head(hidden_state)
-            # in stereo mode, project depth onto epipolar
-            delta_depth[:, 1] = 0.0
+            delta_disparity = self.disparity_head(hidden_state)
+            # in stereo mode, project disparity onto epipolar
+            delta_disparity[:, 1] = 0.0
 
-            coords1 = coords1 + delta_depth
+            coords1 = coords1 + delta_disparity
             up_mask = None if self.mask_predictor is None else self.mask_predictor(hidden_state)
-            upsampled_depth = upsample_flow((coords1 - coords0), up_mask=up_mask, factor=self.base_downsampling_ratio)
-            depth_predictions.append(upsampled_depth[:, :1])
+            upsampled_disparity = upsample_flow(
+                (coords1 - coords0), up_mask=up_mask, factor=self.base_downsampling_ratio
+            )
+            disparity_predictions.append(upsampled_disparity[:, :1])
 
-        return depth_predictions
+        return disparity_predictions
 
 
 def _raft_stereo(
@@ -575,8 +596,8 @@ def _raft_stereo(
         motion_encoder=motion_encoder, hidden_dims=update_block_hidden_dims
     )
 
-    # We use the largest scale hidden_dims of update_block to get the predicted depth
-    depth_head = kwargs.pop("depth_head", None) or FlowHead(
+    # We use the largest scale hidden_dims of update_block to get the predicted disparity
+    disparity_head = kwargs.pop("disparity_head", None) or FlowHead(
         in_channels=update_block_hidden_dims[0],
         hidden_size=flow_head_hidden_size,
     )
@@ -597,27 +618,114 @@ def _raft_stereo(
         corr_pyramid=corr_pyramid,
         corr_block=corr_block,
         update_block=update_block,
-        depth_head=depth_head,
+        disparity_head=disparity_head,
         mask_predictor=mask_predictor,
         slow_fast=slow_fast,
         **kwargs,  # not really needed, all params should be consumed by now
     )
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
 
 class Raft_Stereo_Realtime_Weights(WeightsEnum):
-    pass
+    SCENEFLOW_V1 = Weights(
+        # Weights ported from https://github.com/princeton-vl/RAFT-Stereo
+        url="https://download.pytorch.org/models/raft_stereo_realtime-cf345ccb.pth",
+        transforms=partial(StereoMatching, resize_size=(224, 224)),
+        meta={
+            "num_params": 8077152,
+            "recipe": "https://github.com/princeton-vl/RAFT-Stereo",
+            "_metrics": {
+                # Following metrics from paper: https://arxiv.org/abs/2109.07547
+                "Kitty2015": {
+                    "3px": 0.9409,
+                }
+            },
+        },
+    )
+
+    DEFAULT = SCENEFLOW_V1
 
 
 class Raft_Stereo_Base_Weights(WeightsEnum):
-    pass
+    SCENEFLOW_V1 = Weights(
+        # Weights ported from https://github.com/princeton-vl/RAFT-Stereo
+        url="https://download.pytorch.org/models/raft_stereo_base_sceneflow-eff3f2e6.pth",
+        transforms=partial(StereoMatching, resize_size=(224, 224)),
+        meta={
+            "num_params": 11116176,
+            "recipe": "https://github.com/princeton-vl/RAFT-Stereo",
+            "_metrics": {
+                # Following metrics from paper: https://arxiv.org/abs/2109.07547
+                # Using standard metrics for each dataset
+                "Kitty2015": {
+                    # Ratio of pixels with difference less than 3px from ground truth
+                    "3px": 0.9426,
+                },
+                # For middlebury, ratio of pixels with difference less than 2px from ground truth
+                # on full, half, and quarter image resolution
+                "Middlebury2014-val-full": {
+                    "2px": 0.8167,
+                },
+                "Middlebury2014-val-half": {
+                    "2px": 0.8741,
+                },
+                "Middlebury2014-val-quarter": {
+                    "2px": 0.9064,
+                },
+                "ETH3D-val": {
+                    # Ratio of pixels with difference less than 1px from ground truth
+                    "1px": 0.9672,
+                },
+            },
+        },
+    )
+
+    MIDDLEBURY_V1 = Weights(
+        # Weights ported from https://github.com/princeton-vl/RAFT-Stereo
+        url="https://download.pytorch.org/models/raft_stereo_base_middlebury-afa9d252.pth",
+        transforms=partial(StereoMatching, resize_size=(224, 224)),
+        meta={
+            "num_params": 11116176,
+            "recipe": "https://github.com/princeton-vl/RAFT-Stereo",
+            "_metrics": {
+                # Following metrics from paper: https://arxiv.org/abs/2109.07547
+                "Middlebury-test": {
+                    "mae": 1.27,
+                    "1px": 0.9063,
+                    "2px": 0.9526,
+                    "5px": 0.9725,
+                }
+            },
+        },
+    )
+
+    ETH3D_V1 = Weights(
+        # Weights ported from https://github.com/princeton-vl/RAFT-Stereo
+        url="https://download.pytorch.org/models/raft_stereo_base_eth3d-d4830f22.pth",
+        transforms=partial(StereoMatching, resize_size=(224, 224)),
+        meta={
+            "num_params": 11116176,
+            "recipe": "https://github.com/princeton-vl/RAFT-Stereo",
+            "_metrics": {
+                # Following metrics from paper: https://arxiv.org/abs/2109.07547
+                "ETH3D-test": {
+                    "mae": 0.18,
+                    "1px": 0.9756,
+                    "2px": 0.9956,
+                }
+            },
+        },
+    )
+
+    DEFAULT = MIDDLEBURY_V1
 
 
 @register_model()
+@handle_legacy_interface(weights=("pretrained", None))
 def raft_stereo_realtime(
     *, weights: Optional[Raft_Stereo_Realtime_Weights] = None, progress=True, **kwargs
 ) -> RaftStereo:
@@ -678,6 +786,7 @@ def raft_stereo_realtime(
 
 
 @register_model()
+@handle_legacy_interface(weights=("pretrained", None))
 def raft_stereo_base(*, weights: Optional[Raft_Stereo_Base_Weights] = None, progress=True, **kwargs) -> RaftStereo:
     """RAFT-Stereo model from
     `RAFT-Stereo: Multilevel Recurrent Field Transforms for Stereo Matching <https://arxiv.org/abs/2109.07547>`_.

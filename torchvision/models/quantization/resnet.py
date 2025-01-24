@@ -144,7 +144,7 @@ def _resnet(
         quantize_model(model, backend)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -175,6 +175,8 @@ class ResNet18_QuantizedWeights(WeightsEnum):
                     "acc@5": 88.882,
                 }
             },
+            "_ops": 1.814,
+            "_file_size": 11.238,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -194,6 +196,8 @@ class ResNet50_QuantizedWeights(WeightsEnum):
                     "acc@5": 92.814,
                 }
             },
+            "_ops": 4.089,
+            "_file_size": 24.759,
         },
     )
     IMAGENET1K_FBGEMM_V2 = Weights(
@@ -209,6 +213,8 @@ class ResNet50_QuantizedWeights(WeightsEnum):
                     "acc@5": 94.976,
                 }
             },
+            "_ops": 4.089,
+            "_file_size": 24.953,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V2
@@ -228,6 +234,8 @@ class ResNeXt101_32X8D_QuantizedWeights(WeightsEnum):
                     "acc@5": 94.480,
                 }
             },
+            "_ops": 16.414,
+            "_file_size": 86.034,
         },
     )
     IMAGENET1K_FBGEMM_V2 = Weights(
@@ -243,6 +251,8 @@ class ResNeXt101_32X8D_QuantizedWeights(WeightsEnum):
                     "acc@5": 96.132,
                 }
             },
+            "_ops": 16.414,
+            "_file_size": 86.645,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V2
@@ -263,6 +273,8 @@ class ResNeXt101_64X4D_QuantizedWeights(WeightsEnum):
                     "acc@5": 96.326,
                 }
             },
+            "_ops": 15.46,
+            "_file_size": 81.556,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -421,6 +433,14 @@ def resnext101_32x8d(
 
 
 @register_model(name="quantized_resnext101_64x4d")
+@handle_legacy_interface(
+    weights=(
+        "pretrained",
+        lambda kwargs: ResNeXt101_64X4D_QuantizedWeights.IMAGENET1K_FBGEMM_V1
+        if kwargs.get("quantize", False)
+        else ResNeXt101_64X4D_Weights.IMAGENET1K_V1,
+    )
+)
 def resnext101_64x4d(
     *,
     weights: Optional[Union[ResNeXt101_64X4D_QuantizedWeights, ResNeXt101_64X4D_Weights]] = None,
@@ -462,17 +482,3 @@ def resnext101_64x4d(
     _ovewrite_named_param(kwargs, "groups", 64)
     _ovewrite_named_param(kwargs, "width_per_group", 4)
     return _resnet(QuantizableBottleneck, [3, 4, 23, 3], weights, progress, quantize, **kwargs)
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-from ..resnet import model_urls  # noqa: F401
-
-
-quant_model_urls = _ModelURLs(
-    {
-        "resnet18_fbgemm": ResNet18_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-        "resnet50_fbgemm": ResNet50_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-        "resnext101_32x8d_fbgemm": ResNeXt101_32X8D_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-    }
-)

@@ -1,9 +1,10 @@
 import os
-from typing import Any, Callable, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Optional, Tuple, Union
 
 from PIL import Image
 
-from .utils import check_integrity, download_url
+from .utils import check_integrity, download_and_extract_archive, download_url
 from .vision import VisionDataset
 
 
@@ -11,7 +12,7 @@ class SBU(VisionDataset):
     """`SBU Captioned Photo <http://www.cs.virginia.edu/~vicente/sbucaptions/>`_ Dataset.
 
     Args:
-        root (string): Root directory of dataset where tarball
+        root (str or ``pathlib.Path``): Root directory of dataset where tarball
             ``SBUCaptionedPhotoDataset.tar.gz`` exists.
         transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
@@ -22,13 +23,13 @@ class SBU(VisionDataset):
             downloaded again.
     """
 
-    url = "http://www.cs.virginia.edu/~vicente/sbucaptions/SBUCaptionedPhotoDataset.tar.gz"
+    url = "https://www.cs.rice.edu/~vo9/sbucaptions/SBUCaptionedPhotoDataset.tar.gz"
     filename = "SBUCaptionedPhotoDataset.tar.gz"
     md5_checksum = "9aec147b3488753cf758b4d493422285"
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
         download: bool = True,
@@ -90,17 +91,11 @@ class SBU(VisionDataset):
 
     def download(self) -> None:
         """Download and extract the tarball, and download each individual photo."""
-        import tarfile
 
         if self._check_integrity():
-            print("Files already downloaded and verified")
             return
 
-        download_url(self.url, self.root, self.filename, self.md5_checksum)
-
-        # Extract file
-        with tarfile.open(os.path.join(self.root, self.filename), "r:gz") as tar:
-            tar.extractall(path=self.root)
+        download_and_extract_archive(self.url, self.root, self.root, self.filename, self.md5_checksum)
 
         # Download individual photos
         with open(os.path.join(self.root, "dataset", "SBU_captioned_photo_dataset_urls.txt")) as fh:

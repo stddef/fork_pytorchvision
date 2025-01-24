@@ -1,4 +1,3 @@
-import warnings
 from functools import partial
 from typing import Any, Callable, List, Optional
 
@@ -17,24 +16,6 @@ __all__ = ["MobileNetV2", "MobileNet_V2_Weights", "mobilenet_v2"]
 
 
 # necessary for backwards compatibility
-class _DeprecatedConvBNAct(Conv2dNormActivation):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "The ConvBNReLU/ConvBNActivation classes are deprecated since 0.12 and will be removed in 0.14. "
-            "Use torchvision.ops.misc.Conv2dNormActivation instead.",
-            FutureWarning,
-        )
-        if kwargs.get("norm_layer", None) is None:
-            kwargs["norm_layer"] = nn.BatchNorm2d
-        if kwargs.get("activation_layer", None) is None:
-            kwargs["activation_layer"] = nn.ReLU6
-        super().__init__(*args, **kwargs)
-
-
-ConvBNReLU = _DeprecatedConvBNAct
-ConvBNActivation = _DeprecatedConvBNAct
-
-
 class InvertedResidual(nn.Module):
     def __init__(
         self, inp: int, oup: int, stride: int, expand_ratio: int, norm_layer: Optional[Callable[..., nn.Module]] = None
@@ -42,7 +23,7 @@ class InvertedResidual(nn.Module):
         super().__init__()
         self.stride = stride
         if stride not in [1, 2]:
-            raise ValueError(f"stride should be 1 or 2 insted of {stride}")
+            raise ValueError(f"stride should be 1 or 2 instead of {stride}")
 
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -213,6 +194,8 @@ class MobileNet_V2_Weights(WeightsEnum):
                     "acc@5": 90.286,
                 }
             },
+            "_ops": 0.301,
+            "_file_size": 13.555,
             "_docs": """These weights reproduce closely the results of the paper using a simple training recipe.""",
         },
     )
@@ -228,6 +211,8 @@ class MobileNet_V2_Weights(WeightsEnum):
                     "acc@5": 90.822,
                 }
             },
+            "_ops": 0.301,
+            "_file_size": 13.598,
             "_docs": """
                 These weights improve upon the results of the original paper by using a modified version of TorchVision's
                 `new training recipe
@@ -270,17 +255,6 @@ def mobilenet_v2(
     model = MobileNetV2(**kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from ._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "mobilenet_v2": MobileNet_V2_Weights.IMAGENET1K_V1.url,
-    }
-)

@@ -29,9 +29,9 @@ class KeypointRCNN(FasterRCNN):
     The input to the model is expected to be a list of tensors, each of shape [C, H, W], one for each
     image, and should be in 0-1 range. Different images can have different sizes.
 
-    The behavior of the model changes depending if it is in training or evaluation mode.
+    The behavior of the model changes depending on if it is in training or evaluation mode.
 
-    During training, the model expects both the input tensors, as well as a targets (list of dictionary),
+    During training, the model expects both the input tensors and targets (list of dictionary),
     containing:
 
         - boxes (``FloatTensor[N, 4]``): the ground-truth boxes in ``[x1, y1, x2, y2]`` format, with
@@ -55,13 +55,17 @@ class KeypointRCNN(FasterRCNN):
 
     Args:
         backbone (nn.Module): the network used to compute the features for the model.
-            It should contain a out_channels attribute, which indicates the number of output
+            It should contain an out_channels attribute, which indicates the number of output
             channels that each feature map has (and it should be the same for all feature maps).
             The backbone should return a single Tensor or and OrderedDict[Tensor].
         num_classes (int): number of output classes of the model (including the background).
             If box_predictor is specified, num_classes should be None.
-        min_size (int): minimum size of the image to be rescaled before feeding it to the backbone
-        max_size (int): maximum size of the image to be rescaled before feeding it to the backbone
+        min_size (int): Images are rescaled before feeding them to the backbone:
+            we attempt to preserve the aspect ratio and scale the shorter edge
+            to ``min_size``. If the resulting longer edge exceeds ``max_size``,
+            then downscale so that the longer edge does not exceed ``max_size``.
+            This may result in the shorter edge beeing lower than ``min_size``.
+        max_size (int): See ``min_size``.
         image_mean (Tuple[float, float, float]): mean values used for input normalization.
             They are generally the mean values of the dataset on which the backbone has been trained
             on
@@ -83,8 +87,7 @@ class KeypointRCNN(FasterRCNN):
             for computing the loss
         rpn_positive_fraction (float): proportion of positive anchors in a mini-batch during training
             of the RPN
-        rpn_score_thresh (float): during inference, only return proposals with a classification score
-            greater than rpn_score_thresh
+        rpn_score_thresh (float): only return proposals with an objectness score greater than rpn_score_thresh
         box_roi_pool (MultiScaleRoIAlign): the module which crops and resizes the feature maps in
             the locations indicated by the bounding boxes
         box_head (nn.Module): module that takes the cropped feature maps as input
@@ -121,7 +124,7 @@ class KeypointRCNN(FasterRCNN):
         >>> # only the features
         >>> backbone = torchvision.models.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).features
         >>> # KeypointRCNN needs to know the number of
-        >>> # output channels in a backbone. For mobilenet_v2, it's 1280
+        >>> # output channels in a backbone. For mobilenet_v2, it's 1280,
         >>> # so we need to add it here
         >>> backbone.out_channels = 1280
         >>>
@@ -153,7 +156,6 @@ class KeypointRCNN(FasterRCNN):
         >>>                      rpn_anchor_generator=anchor_generator,
         >>>                      box_roi_pool=roi_pooler,
         >>>                      keypoint_roi_pool=keypoint_roi_pooler)
-        >>> model.eval()
         >>> model.eval()
         >>> x = [torch.rand(3, 300, 400), torch.rand(3, 500, 400)]
         >>> predictions = model(x)
@@ -328,6 +330,8 @@ class KeypointRCNN_ResNet50_FPN_Weights(WeightsEnum):
                     "kp_map": 61.1,
                 }
             },
+            "_ops": 133.924,
+            "_file_size": 226.054,
             "_docs": """
                 These weights were produced by following a similar training recipe as on the paper but use a checkpoint
                 from an early epoch.
@@ -347,6 +351,8 @@ class KeypointRCNN_ResNet50_FPN_Weights(WeightsEnum):
                     "kp_map": 65.0,
                 }
             },
+            "_ops": 137.42,
+            "_file_size": 226.054,
             "_docs": """These weights were produced by following a similar training recipe as on the paper.""",
         },
     )
@@ -383,9 +389,9 @@ def keypointrcnn_resnet50_fpn(
     The input to the model is expected to be a list of tensors, each of shape ``[C, H, W]``, one for each
     image, and should be in ``0-1`` range. Different images can have different sizes.
 
-    The behavior of the model changes depending if it is in training or evaluation mode.
+    The behavior of the model changes depending on if it is in training or evaluation mode.
 
-    During training, the model expects both the input tensors, as well as a targets (list of dictionary),
+    During training, the model expects both the input tensors and targets (list of dictionary),
     containing:
 
         - boxes (``FloatTensor[N, 4]``): the ground-truth boxes in ``[x1, y1, x2, y2]`` format, with
@@ -444,8 +450,8 @@ def keypointrcnn_resnet50_fpn(
 
     if weights is not None:
         weights_backbone = None
-        num_classes = _ovewrite_value_param(num_classes, len(weights.meta["categories"]))
-        num_keypoints = _ovewrite_value_param(num_keypoints, len(weights.meta["keypoint_names"]))
+        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
+        num_keypoints = _ovewrite_value_param("num_keypoints", num_keypoints, len(weights.meta["keypoint_names"]))
     else:
         if num_classes is None:
             num_classes = 2
@@ -461,21 +467,8 @@ def keypointrcnn_resnet50_fpn(
     model = KeypointRCNN(backbone, num_classes, num_keypoints=num_keypoints, **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
         if weights == KeypointRCNN_ResNet50_FPN_Weights.COCO_V1:
             overwrite_eps(model, 0.0)
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        # legacy model for BC reasons, see https://github.com/pytorch/vision/issues/1606
-        "keypointrcnn_resnet50_fpn_coco_legacy": KeypointRCNN_ResNet50_FPN_Weights.COCO_LEGACY.url,
-        "keypointrcnn_resnet50_fpn_coco": KeypointRCNN_ResNet50_FPN_Weights.COCO_V1.url,
-    }
-)

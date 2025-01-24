@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
+
 __all__ = [
     "make_grid",
     "save_image",
@@ -29,7 +30,6 @@ def make_grid(
     value_range: Optional[Tuple[int, int]] = None,
     scale_each: bool = False,
     pad_value: float = 0.0,
-    **kwargs,
 ) -> torch.Tensor:
     """
     Make a grid of images.
@@ -45,10 +45,6 @@ def make_grid(
         value_range (tuple, optional): tuple (min, max) where min and max are numbers,
             then these numbers are used to normalize the image. By default, min and max
             are computed from the tensor.
-        range (tuple. optional):
-            .. warning::
-                This parameter was deprecated in ``0.12`` and will be removed in ``0.14``. Please use ``value_range``
-                instead.
         scale_each (bool, optional): If ``True``, scale each image in the batch of
             images separately rather than the (min, max) over all images. Default: ``False``.
         pad_value (float, optional): Value for the padded pixels. Default: ``0``.
@@ -65,13 +61,6 @@ def make_grid(
                     raise TypeError(f"tensor or list of tensors expected, got a list containing {type(t)}")
         else:
             raise TypeError(f"tensor or list of tensors expected, got {type(tensor)}")
-
-    if "range" in kwargs.keys():
-        warnings.warn(
-            "The parameter 'range' is deprecated since 0.12 and will be removed in 0.14. "
-            "Please use 'value_range' instead."
-        )
-        value_range = kwargs["range"]
 
     # if list of tensors, convert to a 4D mini-batch Tensor
     if isinstance(tensor, list):
@@ -156,7 +145,7 @@ def save_image(
     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
         _log_api_usage_once(save_image)
     grid = make_grid(tensor, **kwargs)
-    # Add 0.5 after unnormalizing to [0, 255] to round to nearest integer
+    # Add 0.5 after unnormalizing to [0, 255] to round to the nearest integer
     ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to("cpu", torch.uint8).numpy()
     im = Image.fromarray(ndarr)
     im.save(fp, format=format)
@@ -172,15 +161,16 @@ def draw_bounding_boxes(
     width: int = 1,
     font: Optional[str] = None,
     font_size: Optional[int] = None,
+    label_colors: Optional[Union[List[Union[str, Tuple[int, int, int]]], str, Tuple[int, int, int]]] = None,
 ) -> torch.Tensor:
 
     """
-    Draws bounding boxes on given image.
-    The values of the input image should be uint8 between 0 and 255.
+    Draws bounding boxes on given RGB image.
+    The image values should be uint8 in [0, 255] or float in [0, 1].
     If fill is True, Resulting Tensor should be saved as PNG image.
 
     Args:
-        image (Tensor): Tensor of shape (C x H x W) and dtype uint8.
+        image (Tensor): Tensor of shape (C, H, W) and dtype uint8 or float.
         boxes (Tensor): Tensor of size (N, 4) containing bounding boxes in (xmin, ymin, xmax, ymax) format. Note that
             the boxes are absolute coordinates with respect to the image. In other words: `0 <= xmin < xmax < W` and
             `0 <= ymin < ymax < H`.
@@ -195,17 +185,21 @@ def draw_bounding_boxes(
             also search in other directories, such as the `fonts/` directory on Windows or `/Library/Fonts/`,
             `/System/Library/Fonts/` and `~/Library/Fonts/` on macOS.
         font_size (int): The requested font size in points.
+        label_colors (color or list of colors, optional): Colors for the label text.  See the description of the
+            `colors` argument for details.  Defaults to the same colors used for the boxes.
 
     Returns:
         img (Tensor[C, H, W]): Image Tensor of dtype uint8 with bounding boxes plotted.
+
     """
+    import torchvision.transforms.v2.functional as F  # noqa
 
     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
         _log_api_usage_once(draw_bounding_boxes)
     if not isinstance(image, torch.Tensor):
         raise TypeError(f"Tensor expected, got {type(image)}")
-    elif image.dtype != torch.uint8:
-        raise ValueError(f"Tensor uint8 expected, got {image.dtype}")
+    elif not (image.dtype == torch.uint8 or image.is_floating_point()):
+        raise ValueError(f"The image dtype must be uint8 or float, got {image.dtype}")
     elif image.dim() != 3:
         raise ValueError("Pass individual images, not batches")
     elif image.size(0) not in {1, 3}:
@@ -228,15 +222,11 @@ def draw_bounding_boxes(
             f"Number of boxes ({num_boxes}) and labels ({len(labels)}) mismatch. Please specify labels for each box."
         )
 
-    if colors is None:
-        colors = _generate_color_palette(num_boxes)
-    elif isinstance(colors, list):
-        if len(colors) < num_boxes:
-            raise ValueError(f"Number of colors ({len(colors)}) is less than number of boxes ({num_boxes}). ")
-    else:  # colors specifies a single color for all boxes
-        colors = [colors] * num_boxes
-
-    colors = [(ImageColor.getrgb(color) if isinstance(color, str) else color) for color in colors]
+    colors = _parse_colors(colors, num_objects=num_boxes)
+    if label_colors:
+        label_colors = _parse_colors(label_colors, num_objects=num_boxes)  # type: ignore[assignment]
+    else:
+        label_colors = colors.copy()  # type: ignore[assignment]
 
     if font is None:
         if font_size is not None:
@@ -249,8 +239,11 @@ def draw_bounding_boxes(
     if image.size(0) == 1:
         image = torch.tile(image, (3, 1, 1))
 
-    ndarr = image.permute(1, 2, 0).cpu().numpy()
-    img_to_draw = Image.fromarray(ndarr)
+    original_dtype = image.dtype
+    if original_dtype.is_floating_point:
+        image = F.to_dtype(image, dtype=torch.uint8, scale=True)
+
+    img_to_draw = F.to_pil_image(image)
     img_boxes = boxes.to(torch.int64).tolist()
 
     if fill:
@@ -258,7 +251,7 @@ def draw_bounding_boxes(
     else:
         draw = ImageDraw.Draw(img_to_draw)
 
-    for bbox, color, label in zip(img_boxes, colors, labels):  # type: ignore[arg-type]
+    for bbox, color, label, label_color in zip(img_boxes, colors, labels, label_colors):  # type: ignore[arg-type]
         if fill:
             fill_color = color + (100,)
             draw.rectangle(bbox, width=width, outline=color, fill=fill_color)
@@ -267,9 +260,12 @@ def draw_bounding_boxes(
 
         if label is not None:
             margin = width + 1
-            draw.text((bbox[0] + margin, bbox[1] + margin), label, fill=color, font=txt_font)
+            draw.text((bbox[0] + margin, bbox[1] + margin), label, fill=label_color, font=txt_font)  # type: ignore[arg-type]
 
-    return torch.from_numpy(np.array(img_to_draw)).permute(2, 0, 1).to(dtype=torch.uint8)
+    out = F.pil_to_tensor(img_to_draw)
+    if original_dtype.is_floating_point:
+        out = F.to_dtype(out, dtype=original_dtype, scale=True)
+    return out
 
 
 @torch.no_grad()
@@ -282,10 +278,10 @@ def draw_segmentation_masks(
 
     """
     Draws segmentation masks on given RGB image.
-    The values of the input image should be uint8 between 0 and 255.
+    The image values should be uint8 in [0, 255] or float in [0, 1].
 
     Args:
-        image (Tensor): Tensor of shape (3, H, W) and dtype uint8.
+        image (Tensor): Tensor of shape (3, H, W) and dtype uint8 or float.
         masks (Tensor): Tensor of shape (num_masks, H, W) or (H, W) and dtype bool.
         alpha (float): Float number between 0 and 1 denoting the transparency of the masks.
             0 means full transparency, 1 means no transparency.
@@ -302,8 +298,8 @@ def draw_segmentation_masks(
         _log_api_usage_once(draw_segmentation_masks)
     if not isinstance(image, torch.Tensor):
         raise TypeError(f"The image must be a tensor, got {type(image)}")
-    elif image.dtype != torch.uint8:
-        raise ValueError(f"The image dtype must be uint8, got {image.dtype}")
+    elif not (image.dtype == torch.uint8 or image.is_floating_point()):
+        raise ValueError(f"The image dtype must be uint8 or float, got {image.dtype}")
     elif image.dim() != 3:
         raise ValueError("Pass individual images, not batches")
     elif image.size()[0] != 3:
@@ -318,38 +314,28 @@ def draw_segmentation_masks(
         raise ValueError("The image and the masks must have the same height and width")
 
     num_masks = masks.size()[0]
-    if colors is not None and num_masks > len(colors):
-        raise ValueError(f"There are more masks ({num_masks}) than colors ({len(colors)})")
+    overlapping_masks = masks.sum(dim=0) > 1
 
     if num_masks == 0:
         warnings.warn("masks doesn't contain any mask. No mask was drawn")
         return image
 
-    if colors is None:
-        colors = _generate_color_palette(num_masks)
-
-    if not isinstance(colors, list):
-        colors = [colors]
-    if not isinstance(colors[0], (tuple, str)):
-        raise ValueError("colors must be a tuple or a string, or a list thereof")
-    if isinstance(colors[0], tuple) and len(colors[0]) != 3:
-        raise ValueError("It seems that you passed a tuple of colors instead of a list of colors")
-
-    out_dtype = torch.uint8
-
-    colors_ = []
-    for color in colors:
-        if isinstance(color, str):
-            color = ImageColor.getrgb(color)
-        colors_.append(torch.tensor(color, dtype=out_dtype))
+    original_dtype = image.dtype
+    colors = [
+        torch.tensor(color, dtype=original_dtype, device=image.device)
+        for color in _parse_colors(colors, num_objects=num_masks, dtype=original_dtype)
+    ]
 
     img_to_draw = image.detach().clone()
     # TODO: There might be a way to vectorize this
-    for mask, color in zip(masks, colors_):
+    for mask, color in zip(masks, colors):
         img_to_draw[:, mask] = color[:, None]
 
+    img_to_draw[:, overlapping_masks] = 0
+
     out = image * (1 - alpha) + img_to_draw * alpha
-    return out.to(out_dtype)
+    # Note: at this point, out is a float tensor in [0, 1] or [0, 255] depending on original_dtype
+    return out.to(original_dtype)
 
 
 @torch.no_grad()
@@ -360,56 +346,98 @@ def draw_keypoints(
     colors: Optional[Union[str, Tuple[int, int, int]]] = None,
     radius: int = 2,
     width: int = 3,
+    visibility: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
 
     """
     Draws Keypoints on given RGB image.
-    The values of the input image should be uint8 between 0 and 255.
+    The image values should be uint8 in [0, 255] or float in [0, 1].
+    Keypoints can be drawn for multiple instances at a time.
+
+    This method allows that keypoints and their connectivity are drawn based on the visibility of this keypoint.
 
     Args:
-        image (Tensor): Tensor of shape (3, H, W) and dtype uint8.
-        keypoints (Tensor): Tensor of shape (num_instances, K, 2) the K keypoints location for each of the N instances,
+        image (Tensor): Tensor of shape (3, H, W) and dtype uint8 or float.
+        keypoints (Tensor): Tensor of shape (num_instances, K, 2) the K keypoint locations for each of the N instances,
             in the format [x, y].
-        connectivity (List[Tuple[int, int]]]): A List of tuple where,
-            each tuple contains pair of keypoints to be connected.
+        connectivity (List[Tuple[int, int]]]): A List of tuple where each tuple contains a pair of keypoints
+            to be connected.
+            If at least one of the two connected keypoints has a ``visibility`` of False,
+            this specific connection is not drawn.
+            Exclusions due to invisibility are computed per-instance.
         colors (str, Tuple): The color can be represented as
             PIL strings e.g. "red" or "#FF00FF", or as RGB tuples e.g. ``(240, 10, 157)``.
         radius (int): Integer denoting radius of keypoint.
         width (int): Integer denoting width of line connecting keypoints.
+        visibility (Tensor): Tensor of shape (num_instances, K) specifying the visibility of the K
+            keypoints for each of the N instances.
+            True means that the respective keypoint is visible and should be drawn.
+            False means invisible, so neither the point nor possible connections containing it are drawn.
+            The input tensor will be cast to bool.
+            Default ``None`` means that all the keypoints are visible.
+            For more details, see :ref:`draw_keypoints_with_visibility`.
 
     Returns:
-        img (Tensor[C, H, W]): Image Tensor of dtype uint8 with keypoints drawn.
+        img (Tensor[C, H, W]): Image Tensor with keypoints drawn.
     """
 
     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
         _log_api_usage_once(draw_keypoints)
+    # validate image
     if not isinstance(image, torch.Tensor):
         raise TypeError(f"The image must be a tensor, got {type(image)}")
-    elif image.dtype != torch.uint8:
-        raise ValueError(f"The image dtype must be uint8, got {image.dtype}")
+    elif not (image.dtype == torch.uint8 or image.is_floating_point()):
+        raise ValueError(f"The image dtype must be uint8 or float, got {image.dtype}")
     elif image.dim() != 3:
         raise ValueError("Pass individual images, not batches")
     elif image.size()[0] != 3:
         raise ValueError("Pass an RGB image. Other Image formats are not supported")
 
+    # validate keypoints
     if keypoints.ndim != 3:
         raise ValueError("keypoints must be of shape (num_instances, K, 2)")
+
+    # validate visibility
+    if visibility is None:  # set default
+        visibility = torch.ones(keypoints.shape[:-1], dtype=torch.bool)
+    if visibility.ndim == 3:
+        # If visibility was passed as pred.split([2, 1], dim=-1), it will be of shape (num_instances, K, 1).
+        # We make sure it is of shape (num_instances, K). This isn't documented, we're just being nice.
+        visibility = visibility.squeeze(-1)
+    if visibility.ndim != 2:
+        raise ValueError(f"visibility must be of shape (num_instances, K). Got ndim={visibility.ndim}")
+    if visibility.shape != keypoints.shape[:-1]:
+        raise ValueError(
+            "keypoints and visibility must have the same dimensionality for num_instances and K. "
+            f"Got {visibility.shape = } and {keypoints.shape = }"
+        )
+
+    original_dtype = image.dtype
+    if original_dtype.is_floating_point:
+        from torchvision.transforms.v2.functional import to_dtype  # noqa
+
+        image = to_dtype(image, dtype=torch.uint8, scale=True)
 
     ndarr = image.permute(1, 2, 0).cpu().numpy()
     img_to_draw = Image.fromarray(ndarr)
     draw = ImageDraw.Draw(img_to_draw)
     img_kpts = keypoints.to(torch.int64).tolist()
+    img_vis = visibility.cpu().bool().tolist()
 
-    for kpt_id, kpt_inst in enumerate(img_kpts):
-        for inst_id, kpt in enumerate(kpt_inst):
-            x1 = kpt[0] - radius
-            x2 = kpt[0] + radius
-            y1 = kpt[1] - radius
-            y2 = kpt[1] + radius
+    for kpt_inst, vis_inst in zip(img_kpts, img_vis):
+        for kpt_coord, kp_vis in zip(kpt_inst, vis_inst):
+            if not kp_vis:
+                continue
+            x1 = kpt_coord[0] - radius
+            x2 = kpt_coord[0] + radius
+            y1 = kpt_coord[1] - radius
+            y2 = kpt_coord[1] + radius
             draw.ellipse([x1, y1, x2, y2], fill=colors, outline=None, width=0)
 
         if connectivity:
             for connection in connectivity:
+                if (not vis_inst[connection[0]]) or (not vis_inst[connection[1]]):
+                    continue
                 start_pt_x = kpt_inst[connection[0]][0]
                 start_pt_y = kpt_inst[connection[0]][1]
 
@@ -421,7 +449,10 @@ def draw_keypoints(
                     width=width,
                 )
 
-    return torch.from_numpy(np.array(img_to_draw)).permute(2, 0, 1).to(dtype=torch.uint8)
+    out = torch.from_numpy(np.array(img_to_draw)).permute(2, 0, 1)
+    if original_dtype.is_floating_point:
+        out = to_dtype(out, dtype=original_dtype, scale=True)
+    return out
 
 
 # Flow visualization code adapted from https://github.com/tomrunia/OpticalFlow_Visualization
@@ -546,6 +577,53 @@ def _generate_color_palette(num_objects: int):
     return [tuple((i * palette) % 255) for i in range(num_objects)]
 
 
+def _parse_colors(
+    colors: Union[None, str, Tuple[int, int, int], List[Union[str, Tuple[int, int, int]]]],
+    *,
+    num_objects: int,
+    dtype: torch.dtype = torch.uint8,
+) -> List[Tuple[int, int, int]]:
+    """
+    Parses a specification of colors for a set of objects.
+
+    Args:
+        colors: A specification of colors for the objects. This can be one of the following:
+            - None: to generate a color palette automatically.
+            - A list of colors: where each color is either a string (specifying a named color) or an RGB tuple.
+            - A string or an RGB tuple: to use the same color for all objects.
+
+            If `colors` is a tuple, it should be a 3-tuple specifying the RGB values of the color.
+            If `colors` is a list, it should have at least as many elements as the number of objects to color.
+
+        num_objects (int): The number of objects to color.
+
+    Returns:
+        A list of 3-tuples, specifying the RGB values of the colors.
+
+    Raises:
+        ValueError: If the number of colors in the list is less than the number of objects to color.
+                    If `colors` is not a list, tuple, string or None.
+    """
+    if colors is None:
+        colors = _generate_color_palette(num_objects)
+    elif isinstance(colors, list):
+        if len(colors) < num_objects:
+            raise ValueError(
+                f"Number of colors must be equal or larger than the number of objects, but got {len(colors)} < {num_objects}."
+            )
+    elif not isinstance(colors, (tuple, str)):
+        raise ValueError(f"`colors` must be a tuple or a string, or a list thereof, but got {colors}.")
+    elif isinstance(colors, tuple) and len(colors) != 3:
+        raise ValueError(f"If passed as tuple, colors should be an RGB triplet, but got {colors}.")
+    else:  # colors specifies a single color for all objects
+        colors = [colors] * num_objects
+
+    colors = [ImageColor.getrgb(color) if isinstance(color, str) else color for color in colors]
+    if dtype.is_floating_point:  # [0, 255] -> [0, 1]
+        colors = [tuple(v / 255 for v in color) for color in colors]  # type: ignore[union-attr]
+    return colors  # type: ignore[return-value]
+
+
 def _log_api_usage_once(obj: Any) -> None:
 
     """
@@ -576,7 +654,7 @@ def _log_api_usage_once(obj: Any) -> None:
 def _make_ntuple(x: Any, n: int) -> Tuple[Any, ...]:
     """
     Make n-tuple from input x. If x is an iterable, then we just convert it to tuple.
-    Otherwise we will make a tuple of length n, all with value of x.
+    Otherwise, we will make a tuple of length n, all with value of x.
     reference: https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/utils.py#L8
 
     Args:

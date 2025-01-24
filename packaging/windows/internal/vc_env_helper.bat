@@ -1,7 +1,11 @@
 @echo on
 
-set VC_VERSION_LOWER=16
-set VC_VERSION_UPPER=17
+set VC_VERSION_LOWER=17
+set VC_VERSION_UPPER=18
+if "%VC_YEAR%" == "2019" (
+    set VC_VERSION_LOWER=16
+    set VC_VERSION_UPPER=17
+)
 if "%VC_YEAR%" == "2017" (
     set VC_VERSION_LOWER=15
     set VC_VERSION_UPPER=16
@@ -23,6 +27,8 @@ if "%VSDEVCMD_ARGS%" == "" (
 )
 
 @echo on
+
+if "%CU_VERSION%" == "xpu" call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
 
 set DISTUTILS_USE_SDK=1
 

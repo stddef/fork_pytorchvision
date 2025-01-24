@@ -1,74 +1,29 @@
-from typing import Any, Dict, Optional
-
-import numpy as np
-import PIL.Image
+from typing import Any, Dict
 
 import torch
-from torchvision.prototype import features
-from torchvision.prototype.transforms import functional as F, Transform
 
-from ._utils import is_simple_tensor
+from torch.nn.functional import one_hot
 
-
-class DecodeImage(Transform):
-    def _transform(self, inpt: Any, params: Dict[str, Any]) -> Any:
-        if isinstance(inpt, features.EncodedImage):
-            output = F.decode_image_with_pil(inpt)
-            return features.Image(output)
-        else:
-            return inpt
+from torchvision.prototype import tv_tensors as proto_tv_tensors
+from torchvision.transforms.v2 import Transform
 
 
 class LabelToOneHot(Transform):
+    _transformed_types = (proto_tv_tensors.Label,)
+
     def __init__(self, num_categories: int = -1):
         super().__init__()
         self.num_categories = num_categories
 
-    def _transform(self, inpt: Any, params: Dict[str, Any]) -> Any:
-        if isinstance(inpt, features.Label):
-            num_categories = self.num_categories
-            if num_categories == -1 and inpt.categories is not None:
-                num_categories = len(inpt.categories)
-            output = F.label_to_one_hot(inpt, num_categories=num_categories)
-            return features.OneHotLabel(output, categories=inpt.categories)
-        else:
-            return inpt
+    def transform(self, inpt: proto_tv_tensors.Label, params: Dict[str, Any]) -> proto_tv_tensors.OneHotLabel:
+        num_categories = self.num_categories
+        if num_categories == -1 and inpt.categories is not None:
+            num_categories = len(inpt.categories)
+        output = one_hot(inpt.as_subclass(torch.Tensor), num_classes=num_categories)
+        return proto_tv_tensors.OneHotLabel(output, categories=inpt.categories)
 
     def extra_repr(self) -> str:
         if self.num_categories == -1:
             return ""
 
         return f"num_categories={self.num_categories}"
-
-
-class ToImageTensor(Transform):
-
-    # Updated transformed types for ToImageTensor
-    _transformed_types = (torch.Tensor, features._Feature, PIL.Image.Image, np.ndarray)
-
-    def __init__(self, *, copy: bool = False) -> None:
-        super().__init__()
-        self.copy = copy
-
-    def _transform(self, inpt: Any, params: Dict[str, Any]) -> Any:
-        if isinstance(inpt, (features.Image, PIL.Image.Image, np.ndarray)) or is_simple_tensor(inpt):
-            output = F.to_image_tensor(inpt, copy=self.copy)
-            return features.Image(output)
-        else:
-            return inpt
-
-
-class ToImagePIL(Transform):
-
-    # Updated transformed types for ToImagePIL
-    _transformed_types = (torch.Tensor, features._Feature, PIL.Image.Image, np.ndarray)
-
-    def __init__(self, *, mode: Optional[str] = None) -> None:
-        super().__init__()
-        self.mode = mode
-
-    def _transform(self, inpt: Any, params: Dict[str, Any]) -> Any:
-        if isinstance(inpt, (features.Image, PIL.Image.Image, np.ndarray)) or is_simple_tensor(inpt):
-            return F.to_image_pil(inpt, mode=self.mode)
-        else:
-            return inpt

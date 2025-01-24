@@ -361,14 +361,14 @@ TEST(SyncDecoder, TestMemoryBufferNoSeekableWithFullRead) {
   CHECK(decoder.init(
       params,
       [object](uint8_t* out, int size, int whence, uint64_t timeoutMs) mutable
-      -> int {
+          -> int {
         if (out) { // see defs.h file
           // read mode
           return object.read(out, size);
         }
         // seek mode
         if (!timeoutMs) {
-          // seek capabilty, yes - no
+          // seek capability, yes - no
           return -1;
         }
         return object.seek(size, whence);
@@ -401,14 +401,14 @@ TEST(SyncDecoder, TestMemoryBufferNoSeekableWithPartialRead) {
   CHECK(!decoder.init(
       params,
       [object](uint8_t* out, int size, int whence, uint64_t timeoutMs) mutable
-      -> int {
+          -> int {
         if (out) { // see defs.h file
           // read mode
           return object.read(out, size);
         }
         // seek mode
         if (!timeoutMs) {
-          // seek capabilty, yes - no
+          // seek capability, yes - no
           return -1;
         }
         return object.seek(size, whence);
