@@ -39,7 +39,7 @@ class QuantizableBasicConv2d(BasicConv2d):
 
 class QuantizableInception(Inception):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(conv_block=QuantizableBasicConv2d, *args, **kwargs)  # type: ignore[misc]
+        super().__init__(*args, conv_block=QuantizableBasicConv2d, **kwargs)  # type: ignore[misc]
         self.cat = nn.quantized.FloatFunctional()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -50,7 +50,7 @@ class QuantizableInception(Inception):
 class QuantizableInceptionAux(InceptionAux):
     # TODO https://github.com/pytorch/vision/pull/4232#pullrequestreview-730461659
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(conv_block=QuantizableBasicConv2d, *args, **kwargs)  # type: ignore[misc]
+        super().__init__(*args, conv_block=QuantizableBasicConv2d, **kwargs)  # type: ignore[misc]
         self.relu = nn.ReLU()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -75,7 +75,7 @@ class QuantizableGoogLeNet(GoogLeNet):
     # TODO https://github.com/pytorch/vision/pull/4232#pullrequestreview-730461659
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(  # type: ignore[misc]
-            blocks=[QuantizableBasicConv2d, QuantizableInception, QuantizableInceptionAux], *args, **kwargs
+            *args, blocks=[QuantizableBasicConv2d, QuantizableInception, QuantizableInceptionAux], **kwargs
         )
         self.quant = torch.ao.quantization.QuantStub()
         self.dequant = torch.ao.quantization.DeQuantStub()
@@ -108,7 +108,7 @@ class QuantizableGoogLeNet(GoogLeNet):
 
 class GoogLeNet_QuantizedWeights(WeightsEnum):
     IMAGENET1K_FBGEMM_V1 = Weights(
-        url="https://download.pytorch.org/models/quantized/googlenet_fbgemm-c00238cf.pth",
+        url="https://download.pytorch.org/models/quantized/googlenet_fbgemm-c81f6644.pth",
         transforms=partial(ImageClassification, crop_size=224),
         meta={
             "num_params": 6624904,
@@ -123,6 +123,8 @@ class GoogLeNet_QuantizedWeights(WeightsEnum):
                     "acc@5": 89.404,
                 }
             },
+            "_ops": 1.498,
+            "_file_size": 12.618,
             "_docs": """
                 These weights were produced by doing Post Training Quantization (eager mode) on top of the unquantized
                 weights listed below.
@@ -195,7 +197,7 @@ def googlenet(
         quantize_model(model, backend)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
         if not original_aux_logits:
             model.aux_logits = False
             model.aux1 = None  # type: ignore[assignment]
@@ -206,16 +208,3 @@ def googlenet(
             )
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-from ..googlenet import model_urls  # noqa: F401
-
-
-quant_model_urls = _ModelURLs(
-    {
-        # fp32 GoogLeNet ported from TensorFlow, with weights quantized in PyTorch
-        "googlenet_fbgemm": GoogLeNet_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-    }
-)

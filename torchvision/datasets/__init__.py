@@ -1,11 +1,13 @@
 from ._optical_flow import FlyingChairs, FlyingThings3D, HD1K, KittiFlow, Sintel
 from ._stereo_matching import (
     CarlaStereo,
+    CREStereo,
     ETH3DStereo,
     FallingThingsStereo,
     InStereo2k,
     Kitti2012Stereo,
     Kitti2015Stereo,
+    Middlebury2014Stereo,
     SceneFlowStereo,
     SintelStereo,
 )
@@ -28,12 +30,14 @@ from .food101 import Food101
 from .gtsrb import GTSRB
 from .hmdb51 import HMDB51
 from .imagenet import ImageNet
+from .imagenette import Imagenette
 from .inaturalist import INaturalist
-from .kinetics import Kinetics, Kinetics400
+from .kinetics import Kinetics
 from .kitti import Kitti
 from .lfw import LFWPairs, LFWPeople
 from .lsun import LSUN, LSUNClass
 from .mnist import EMNIST, FashionMNIST, KMNIST, MNIST, QMNIST
+from .moving_mnist import MovingMNIST
 from .omniglot import Omniglot
 from .oxford_iiit_pet import OxfordIIITPet
 from .pcam import PCAM
@@ -68,6 +72,7 @@ __all__ = (
     "QMNIST",
     "MNIST",
     "KMNIST",
+    "MovingMNIST",
     "StanfordCars",
     "STL10",
     "SUN397",
@@ -90,7 +95,6 @@ __all__ = (
     "SBDataset",
     "VisionDataset",
     "USPS",
-    "Kinetics400",
     "Kinetics",
     "HMDB51",
     "UCF101",
@@ -118,9 +122,26 @@ __all__ = (
     "Kitti2012Stereo",
     "Kitti2015Stereo",
     "CarlaStereo",
+    "Middlebury2014Stereo",
+    "CREStereo",
     "FallingThingsStereo",
     "SceneFlowStereo",
     "SintelStereo",
     "InStereo2k",
     "ETH3DStereo",
+    "wrap_dataset_for_transforms_v2",
+    "Imagenette",
 )
+
+
+# We override current module's attributes to handle the import:
+# from torchvision.datasets import wrap_dataset_for_transforms_v2
+# without a cyclic error.
+# Ref: https://peps.python.org/pep-0562/
+def __getattr__(name):
+    if name in ("wrap_dataset_for_transforms_v2",):
+        from torchvision.tv_tensors._dataset_wrapper import wrap_dataset_for_transforms_v2
+
+        return wrap_dataset_for_transforms_v2
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

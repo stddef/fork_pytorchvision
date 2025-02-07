@@ -11,7 +11,7 @@ from common_utils import assert_equal
 from numpy.random import randint
 from pytest import approx
 from torchvision import set_video_backend
-from torchvision.io import _HAS_VIDEO_OPT
+from torchvision.io import _HAS_CPU_VIDEO_DECODER
 
 
 try:
@@ -127,7 +127,7 @@ def _read_from_stream(container, start_pts, end_pts, stream, stream_name, buffer
             ascending order. We need to decode more frames even when we meet end
             pts
     """
-    # seeking in the stream is imprecise. Thus, seek to an ealier PTS by a margin
+    # seeking in the stream is imprecise. Thus, seek to an earlier PTS by a margin
     margin = 1
     seek_offset = max(start_pts - margin, 0)
 
@@ -263,7 +263,7 @@ def _get_video_tensor(video_dir, video_file):
 
 
 @pytest.mark.skipif(av is None, reason="PyAV unavailable")
-@pytest.mark.skipif(_HAS_VIDEO_OPT is False, reason="Didn't compile with ffmpeg")
+@pytest.mark.skipif(_HAS_CPU_VIDEO_DECODER is False, reason="Didn't compile with ffmpeg")
 class TestVideoReader:
     def check_separate_decoding_result(self, tv_result, config):
         """check the decoding results from TorchVision decoder"""

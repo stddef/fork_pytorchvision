@@ -2,15 +2,15 @@ import math
 import os
 import random
 import re
+import sys
 from functools import partial
 
 import numpy as np
 import pytest
 import torch
 import torchvision.transforms as transforms
-import torchvision.transforms._pil_constants as _pil_constants
+import torchvision.transforms._functional_tensor as F_t
 import torchvision.transforms.functional as F
-import torchvision.transforms.functional_tensor as F_t
 from PIL import Image
 from torch._utils_internal import get_file_path_2
 
@@ -174,7 +174,7 @@ class TestAccImage:
     def test_accimage_resize(self):
         trans = transforms.Compose(
             [
-                transforms.Resize(256, interpolation=_pil_constants.LINEAR),
+                transforms.Resize(256, interpolation=Image.LINEAR),
                 transforms.PILToTensor(),
                 transforms.ConvertImageDtype(dtype=torch.float),
             ]
@@ -319,7 +319,7 @@ def test_randomresized_params():
         scale_range = (scale_min, scale_min + round(random.random(), 2))
         aspect_min = max(round(random.random(), 2), epsilon)
         aspect_ratio_range = (aspect_min, aspect_min + round(random.random(), 2))
-        randresizecrop = transforms.RandomResizedCrop(size, scale_range, aspect_ratio_range)
+        randresizecrop = transforms.RandomResizedCrop(size, scale_range, aspect_ratio_range, antialias=True)
         i, j, h, w = randresizecrop.get_params(img, scale_range, aspect_ratio_range)
         aspect_ratio_obtained = w / h
         assert (
@@ -366,7 +366,7 @@ def test_randomresized_params():
 def test_resize(height, width, osize, max_size):
     img = Image.new("RGB", size=(width, height), color=127)
 
-    t = transforms.Resize(osize, max_size=max_size)
+    t = transforms.Resize(osize, max_size=max_size, antialias=True)
     result = t(img)
 
     msg = f"{height}, {width} - {osize} - {max_size}"
@@ -424,7 +424,7 @@ def test_resize_sequence_output(height, width, osize):
     img = Image.new("RGB", size=(width, height), color=127)
     oheight, owidth = osize
 
-    t = transforms.Resize(osize)
+    t = transforms.Resize(osize, antialias=True)
     result = t(img)
 
     assert (owidth, oheight) == result.size
@@ -447,9 +447,19 @@ def test_resize_size_equals_small_edge_size(height, width):
     img = Image.new("RGB", size=(width, height), color=127)
 
     small_edge = min(height, width)
-    t = transforms.Resize(small_edge, max_size=max_size)
+    t = transforms.Resize(small_edge, max_size=max_size, antialias=True)
     result = t(img)
     assert max(result.size) == max_size
+
+
+def test_resize_equal_input_output_sizes():
+    # Regression test for https://github.com/pytorch/vision/issues/7518
+    height, width = 28, 27
+    img = Image.new("RGB", size=(width, height))
+
+    t = transforms.Resize((height, width), antialias=True)
+    result = t(img)
+    assert result is img
 
 
 class TestPad:
@@ -605,7 +615,7 @@ class TestToPil:
 
         img_data_short = torch.ShortTensor(1, 4, 4).random_()
         expected_output = img_data_short.numpy()
-        yield img_data_short, expected_output, "I;16"
+        yield img_data_short, expected_output, "I;16" if sys.byteorder == "little" else "I;16B"
 
         img_data_int = torch.IntTensor(1, 4, 4).random_()
         expected_output = img_data_int.numpy()
@@ -622,7 +632,7 @@ class TestToPil:
 
         img_data_short = torch.ShortTensor(4, 4).random_()
         expected_output = img_data_short.numpy()
-        yield img_data_short, expected_output, "I;16"
+        yield img_data_short, expected_output, "I;16" if sys.byteorder == "little" else "I;16B"
 
         img_data_int = torch.IntTensor(4, 4).random_()
         expected_output = img_data_int.numpy()
@@ -651,9 +661,9 @@ class TestToPil:
     @pytest.mark.parametrize(
         "img_data, expected_mode",
         [
-            (torch.Tensor(4, 4, 1).uniform_().numpy(), "F"),
+            (torch.Tensor(4, 4, 1).uniform_().numpy(), "L"),
             (torch.ByteTensor(4, 4, 1).random_(0, 255).numpy(), "L"),
-            (torch.ShortTensor(4, 4, 1).random_().numpy(), "I;16"),
+            (torch.ShortTensor(4, 4, 1).random_().numpy(), "I;16" if sys.byteorder == "little" else "I;16B"),
             (torch.IntTensor(4, 4, 1).random_().numpy(), "I"),
         ],
     )
@@ -661,6 +671,8 @@ class TestToPil:
         transform = transforms.ToPILImage(mode=expected_mode) if with_mode else transforms.ToPILImage()
         img = transform(img_data)
         assert img.mode == expected_mode
+        if np.issubdtype(img_data.dtype, np.floating):
+            img_data = (img_data * 255).astype(np.uint8)
         # note: we explicitly convert img's dtype because pytorch doesn't support uint16
         # and otherwise assert_close wouldn't be able to construct a tensor from the uint16 array
         torch.testing.assert_close(img_data[:, :, 0], np.asarray(img).astype(img_data.dtype))
@@ -731,9 +743,9 @@ class TestToPil:
     @pytest.mark.parametrize(
         "img_data, expected_mode",
         [
-            (torch.Tensor(4, 4).uniform_().numpy(), "F"),
+            (torch.Tensor(4, 4).uniform_().numpy(), "L"),
             (torch.ByteTensor(4, 4).random_(0, 255).numpy(), "L"),
-            (torch.ShortTensor(4, 4).random_().numpy(), "I;16"),
+            (torch.ShortTensor(4, 4).random_().numpy(), "I;16" if sys.byteorder == "little" else "I;16B"),
             (torch.IntTensor(4, 4).random_().numpy(), "I"),
         ],
     )
@@ -741,6 +753,8 @@ class TestToPil:
         transform = transforms.ToPILImage(mode=expected_mode) if with_mode else transforms.ToPILImage()
         img = transform(img_data)
         assert img.mode == expected_mode
+        if np.issubdtype(img_data.dtype, np.floating):
+            img_data = (img_data * 255).astype(np.uint8)
         np.testing.assert_allclose(img_data, img)
 
     @pytest.mark.parametrize("expected_mode", [None, "RGB", "HSV", "YCbCr"])
@@ -864,8 +878,6 @@ class TestToPil:
             trans(np.ones([4, 4, 1], np.uint16))
         with pytest.raises(TypeError, match=reg_msg):
             trans(np.ones([4, 4, 1], np.uint32))
-        with pytest.raises(TypeError, match=reg_msg):
-            trans(np.ones([4, 4, 1], np.float64))
 
         with pytest.raises(ValueError, match=r"pic should be 2/3 dimensional. Got \d+ dimensions."):
             transforms.ToPILImage()(np.ones([1, 4, 4, 3]))
@@ -927,33 +939,6 @@ def test_adjust_contrast():
     y_pil = F.adjust_contrast(x_pil, 2)
     y_np = np.array(y_pil)
     y_ans = [0, 0, 0, 22, 184, 255, 0, 0, 255, 94, 255, 0]
-    y_ans = np.array(y_ans, dtype=np.uint8).reshape(x_shape)
-    torch.testing.assert_close(y_np, y_ans)
-
-
-@pytest.mark.skipif(Image.__version__ >= "7", reason="Temporarily disabled")
-def test_adjust_saturation():
-    x_shape = [2, 2, 3]
-    x_data = [0, 5, 13, 54, 135, 226, 37, 8, 234, 90, 255, 1]
-    x_np = np.array(x_data, dtype=np.uint8).reshape(x_shape)
-    x_pil = Image.fromarray(x_np, mode="RGB")
-
-    # test 0
-    y_pil = F.adjust_saturation(x_pil, 1)
-    y_np = np.array(y_pil)
-    torch.testing.assert_close(y_np, x_np)
-
-    # test 1
-    y_pil = F.adjust_saturation(x_pil, 0.5)
-    y_np = np.array(y_pil)
-    y_ans = [2, 4, 8, 87, 128, 173, 39, 25, 138, 133, 215, 88]
-    y_ans = np.array(y_ans, dtype=np.uint8).reshape(x_shape)
-    torch.testing.assert_close(y_np, y_ans)
-
-    # test 2
-    y_pil = F.adjust_saturation(x_pil, 2)
-    y_np = np.array(y_pil)
-    y_ans = [0, 6, 22, 0, 149, 255, 32, 0, 255, 4, 255, 0]
     y_ans = np.array(y_ans, dtype=np.uint8).reshape(x_shape)
     torch.testing.assert_close(y_np, y_ans)
 
@@ -1424,17 +1409,17 @@ def test_random_choice(proba_passthrough, seed):
 def test_random_order():
     random_state = random.getstate()
     random.seed(42)
-    random_order_transform = transforms.RandomOrder([transforms.Resize(20), transforms.CenterCrop(10)])
+    random_order_transform = transforms.RandomOrder([transforms.Resize(20, antialias=True), transforms.CenterCrop(10)])
     img = transforms.ToPILImage()(torch.rand(3, 25, 25))
     num_samples = 250
     num_normal_order = 0
-    resize_crop_out = transforms.CenterCrop(10)(transforms.Resize(20)(img))
+    resize_crop_out = transforms.CenterCrop(10)(transforms.Resize(20, antialias=True)(img))
     for _ in range(num_samples):
         out = random_order_transform(img)
         if out == resize_crop_out:
             num_normal_order += 1
 
-    p_value = stats.binom_test(num_normal_order, num_samples, p=0.5)
+    p_value = stats.binomtest(num_normal_order, num_samples, p=0.5).pvalue
     random.setstate(random_state)
     assert p_value > 0.0001
 
@@ -1522,10 +1507,10 @@ def test_ten_crop(should_vflip, single_dim):
     five_crop.__repr__()
 
     if should_vflip:
-        vflipped_img = img.transpose(_pil_constants.FLIP_TOP_BOTTOM)
+        vflipped_img = img.transpose(Image.FLIP_TOP_BOTTOM)
         expected_output += five_crop(vflipped_img)
     else:
-        hflipped_img = img.transpose(_pil_constants.FLIP_LEFT_RIGHT)
+        hflipped_img = img.transpose(Image.FLIP_LEFT_RIGHT)
         expected_output += five_crop(hflipped_img)
 
     assert len(results) == 10
@@ -1629,8 +1614,8 @@ def test_augmix(fill, severity, mixture_width, chain_depth, all_ops, grayscale):
 def test_random_crop():
     height = random.randint(10, 32) * 2
     width = random.randint(10, 32) * 2
-    oheight = random.randint(5, (height - 2) / 2) * 2
-    owidth = random.randint(5, (width - 2) / 2) * 2
+    oheight = random.randint(5, (height - 2) // 2) * 2
+    owidth = random.randint(5, (width - 2) // 2) * 2
     img = torch.ones(3, height, width, dtype=torch.uint8)
     result = transforms.Compose(
         [
@@ -1670,7 +1655,7 @@ def test_random_crop():
     assert result.size(1) == height + 1
     assert result.size(2) == width + 1
 
-    t = transforms.RandomCrop(48)
+    t = transforms.RandomCrop(33)
     img = torch.ones(3, 32, 32)
     with pytest.raises(ValueError, match=r"Required crop size .+ is larger than input image size .+"):
         t(img)
@@ -1679,8 +1664,8 @@ def test_random_crop():
 def test_center_crop():
     height = random.randint(10, 32) * 2
     width = random.randint(10, 32) * 2
-    oheight = random.randint(5, (height - 2) / 2) * 2
-    owidth = random.randint(5, (width - 2) / 2) * 2
+    oheight = random.randint(5, (height - 2) // 2) * 2
+    owidth = random.randint(5, (width - 2) // 2) * 2
 
     img = torch.ones(3, height, width, dtype=torch.uint8)
     oh1 = (height - oheight) // 2
@@ -1798,6 +1783,12 @@ def test_color_jitter():
     color_jitter.__repr__()
 
 
+@pytest.mark.parametrize("hue", [1, (-1, 1)])
+def test_color_jitter_hue_out_of_bounds(hue):
+    with pytest.raises(ValueError, match=re.escape("hue values should be between (-0.5, 0.5)")):
+        transforms.ColorJitter(hue=hue)
+
+
 @pytest.mark.parametrize("seed", range(10))
 @pytest.mark.skipif(stats is None, reason="scipy.stats not available")
 def test_random_erasing(seed):
@@ -1818,7 +1809,7 @@ def test_random_erasing(seed):
     tol = 0.05
     assert 1 / 3 - tol <= aspect_ratio <= 3 + tol
 
-    # Make sure that h > w and h < w are equaly likely (log-scale sampling)
+    # Make sure that h > w and h < w are equally likely (log-scale sampling)
     aspect_ratios = []
     random.seed(42)
     trial = 1000
@@ -1834,7 +1825,7 @@ def test_random_erasing(seed):
         aspect_ratios.append(h / w)
 
     count_bigger_then_ones = len([1 for aspect_ratio in aspect_ratios if aspect_ratio > 1])
-    p_value = stats.binom_test(count_bigger_then_ones, trial, p=0.5)
+    p_value = stats.binomtest(count_bigger_then_ones, trial, p=0.5).pvalue
     assert p_value > 0.0001
 
     # Checking if RandomErasing can be printed as string
@@ -1866,27 +1857,8 @@ def test_random_rotation():
     # Checking if RandomRotation can be printed as string
     t.__repr__()
 
-    # assert deprecation warning and non-BC
-    with pytest.warns(
-        UserWarning,
-        match=re.escape(
-            "The parameter 'resample' is deprecated since 0.12 and will be removed 0.14. "
-            "Please use 'interpolation' instead."
-        ),
-    ):
-        t = transforms.RandomRotation((-10, 10), resample=2)
-        assert t.interpolation == transforms.InterpolationMode.BILINEAR
-
-    # assert changed type warning
-    with pytest.warns(
-        UserWarning,
-        match=re.escape(
-            "Argument 'interpolation' of type int is deprecated since 0.13 and will be removed in 0.15. "
-            "Please use InterpolationMode enum."
-        ),
-    ):
-        t = transforms.RandomRotation((-10, 10), interpolation=2)
-        assert t.interpolation == transforms.InterpolationMode.BILINEAR
+    t = transforms.RandomRotation((-10, 10), interpolation=Image.BILINEAR)
+    assert t.interpolation == transforms.InterpolationMode.BILINEAR
 
 
 def test_random_rotation_error():
@@ -2078,7 +2050,7 @@ class TestAffine:
                 # https://github.com/python-pillow/Pillow/blob/71f8ec6a0cfc1008076a023c0756542539d057ab/
                 # src/libImaging/Geometry.c#L1060
                 input_pt = np.array([x + 0.5, y + 0.5, 1.0])
-                res = np.floor(np.dot(inv_true_matrix, input_pt)).astype(np.int)
+                res = np.floor(np.dot(inv_true_matrix, input_pt)).astype(int)
                 _x, _y = res[:2]
                 if 0 <= _x < input_img.shape[1] and 0 <= _y < input_img.shape[0]:
                     true_result[y, x, :] = input_img[_y, _x, :]
@@ -2217,37 +2189,8 @@ def test_random_affine():
     t = transforms.RandomAffine(10, interpolation=transforms.InterpolationMode.BILINEAR)
     assert "bilinear" in t.__repr__()
 
-    # assert deprecation warning and non-BC
-    with pytest.warns(
-        UserWarning,
-        match=re.escape(
-            "The parameter 'resample' is deprecated since 0.12 and will be removed in 0.14. "
-            "Please use 'interpolation' instead."
-        ),
-    ):
-        t = transforms.RandomAffine(10, resample=2)
-        assert t.interpolation == transforms.InterpolationMode.BILINEAR
-
-    with pytest.warns(
-        UserWarning,
-        match=re.escape(
-            "The parameter 'fillcolor' is deprecated since 0.12 and will be removed in 0.14. "
-            "Please use 'fill' instead."
-        ),
-    ):
-        t = transforms.RandomAffine(10, fillcolor=10)
-        assert t.fill == 10
-
-    # assert changed type warning
-    with pytest.warns(
-        UserWarning,
-        match=re.escape(
-            "Argument 'interpolation' of type int is deprecated since 0.13 and will be removed in 0.15. "
-            "Please use InterpolationMode enum."
-        ),
-    ):
-        t = transforms.RandomAffine(10, interpolation=2)
-        assert t.interpolation == transforms.InterpolationMode.BILINEAR
+    t = transforms.RandomAffine(10, interpolation=Image.BILINEAR)
+    assert t.interpolation == transforms.InterpolationMode.BILINEAR
 
 
 def test_elastic_transformation():
@@ -2265,9 +2208,8 @@ def test_elastic_transformation():
     with pytest.raises(ValueError, match=r"sigma is a sequence its length should be 2"):
         transforms.ElasticTransform(alpha=2.0, sigma=[1.0, 0.0, 1.0])
 
-    with pytest.warns(UserWarning, match=r"Argument interpolation should be of type InterpolationMode"):
-        t = transforms.transforms.ElasticTransform(alpha=2.0, sigma=2.0, interpolation=2)
-        assert t.interpolation == transforms.InterpolationMode.BILINEAR
+    t = transforms.transforms.ElasticTransform(alpha=2.0, sigma=2.0, interpolation=Image.BILINEAR)
+    assert t.interpolation == transforms.InterpolationMode.BILINEAR
 
     with pytest.raises(TypeError, match=r"fill should be int or float"):
         transforms.ElasticTransform(alpha=1.0, sigma=1.0, fill={})
@@ -2285,6 +2227,18 @@ def test_elastic_transformation():
 
     # Checking if ElasticTransform can be printed as string
     t.__repr__()
+
+
+def test_random_grayscale_with_grayscale_input():
+    transform = transforms.RandomGrayscale(p=1.0)
+
+    image_tensor = torch.randint(0, 256, (1, 16, 16), dtype=torch.uint8)
+    output_tensor = transform(image_tensor)
+    torch.testing.assert_close(output_tensor, image_tensor)
+
+    image_pil = F.to_pil_image(image_tensor)
+    output_pil = transform(image_pil)
+    torch.testing.assert_close(F.pil_to_tensor(output_pil), image_tensor)
 
 
 if __name__ == "__main__":

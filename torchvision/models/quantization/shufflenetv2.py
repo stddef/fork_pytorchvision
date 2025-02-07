@@ -108,7 +108,7 @@ def _shufflenetv2(
         quantize_model(model, backend)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -139,6 +139,8 @@ class ShuffleNet_V2_X0_5_QuantizedWeights(WeightsEnum):
                     "acc@5": 79.780,
                 }
             },
+            "_ops": 0.04,
+            "_file_size": 1.501,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -146,7 +148,7 @@ class ShuffleNet_V2_X0_5_QuantizedWeights(WeightsEnum):
 
 class ShuffleNet_V2_X1_0_QuantizedWeights(WeightsEnum):
     IMAGENET1K_FBGEMM_V1 = Weights(
-        url="https://download.pytorch.org/models/quantized/shufflenetv2_x1_fbgemm-db332c57.pth",
+        url="https://download.pytorch.org/models/quantized/shufflenetv2_x1_fbgemm-1e62bb32.pth",
         transforms=partial(ImageClassification, crop_size=224),
         meta={
             **_COMMON_META,
@@ -158,6 +160,8 @@ class ShuffleNet_V2_X1_0_QuantizedWeights(WeightsEnum):
                     "acc@5": 87.582,
                 }
             },
+            "_ops": 0.145,
+            "_file_size": 2.334,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -178,6 +182,8 @@ class ShuffleNet_V2_X1_5_QuantizedWeights(WeightsEnum):
                     "acc@5": 90.700,
                 }
             },
+            "_ops": 0.296,
+            "_file_size": 3.672,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -198,6 +204,8 @@ class ShuffleNet_V2_X2_0_QuantizedWeights(WeightsEnum):
                     "acc@5": 92.488,
                 }
             },
+            "_ops": 0.583,
+            "_file_size": 7.467,
         },
     )
     DEFAULT = IMAGENET1K_FBGEMM_V1
@@ -312,6 +320,14 @@ def shufflenet_v2_x1_0(
 
 
 @register_model(name="quantized_shufflenet_v2_x1_5")
+@handle_legacy_interface(
+    weights=(
+        "pretrained",
+        lambda kwargs: ShuffleNet_V2_X1_5_QuantizedWeights.IMAGENET1K_FBGEMM_V1
+        if kwargs.get("quantize", False)
+        else ShuffleNet_V2_X1_5_Weights.IMAGENET1K_V1,
+    )
+)
 def shufflenet_v2_x1_5(
     *,
     weights: Optional[Union[ShuffleNet_V2_X1_5_QuantizedWeights, ShuffleNet_V2_X1_5_Weights]] = None,
@@ -358,6 +374,14 @@ def shufflenet_v2_x1_5(
 
 
 @register_model(name="quantized_shufflenet_v2_x2_0")
+@handle_legacy_interface(
+    weights=(
+        "pretrained",
+        lambda kwargs: ShuffleNet_V2_X2_0_QuantizedWeights.IMAGENET1K_FBGEMM_V1
+        if kwargs.get("quantize", False)
+        else ShuffleNet_V2_X2_0_Weights.IMAGENET1K_V1,
+    )
+)
 def shufflenet_v2_x2_0(
     *,
     weights: Optional[Union[ShuffleNet_V2_X2_0_QuantizedWeights, ShuffleNet_V2_X2_0_Weights]] = None,
@@ -401,16 +425,3 @@ def shufflenet_v2_x2_0(
     return _shufflenetv2(
         [4, 8, 4], [24, 244, 488, 976, 2048], weights=weights, progress=progress, quantize=quantize, **kwargs
     )
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-from ..shufflenetv2 import model_urls  # noqa: F401
-
-
-quant_model_urls = _ModelURLs(
-    {
-        "shufflenetv2_x0.5_fbgemm": ShuffleNet_V2_X0_5_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-        "shufflenetv2_x1.0_fbgemm": ShuffleNet_V2_X1_0_QuantizedWeights.IMAGENET1K_FBGEMM_V1.url,
-    }
-)

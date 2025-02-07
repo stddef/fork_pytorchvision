@@ -7,7 +7,9 @@ import tarfile
 import zipfile
 
 import pytest
+import torch
 import torchvision.datasets.utils as utils
+from common_utils import assert_equal
 from torch._utils_internal import get_file_path_2
 from torchvision.datasets.folder import make_dataset
 from torchvision.datasets.utils import _COMPRESSED_FILE_OPENERS
@@ -56,8 +58,11 @@ class TestDatasetsUtils:
         assert mock.call_count == 1
         assert mock.call_args[0][0].full_url == url
 
-    def test_check_md5(self):
+    @pytest.mark.parametrize("use_pathlib", (True, False))
+    def test_check_md5(self, use_pathlib):
         fpath = TEST_FILE
+        if use_pathlib:
+            fpath = pathlib.Path(fpath)
         correct_md5 = "9c0bb82894bb3af7f7675ef2b3b6dcdc"
         false_md5 = ""
         assert utils.check_md5(fpath, correct_md5)
@@ -114,7 +119,8 @@ class TestDatasetsUtils:
             utils._detect_file_type(file)
 
     @pytest.mark.parametrize("extension", [".bz2", ".gz", ".xz"])
-    def test_decompress(self, extension, tmpdir):
+    @pytest.mark.parametrize("use_pathlib", (True, False))
+    def test_decompress(self, extension, tmpdir, use_pathlib):
         def create_compressed(root, content="this is the content"):
             file = os.path.join(root, "file")
             compressed = f"{file}{extension}"
@@ -126,6 +132,8 @@ class TestDatasetsUtils:
             return compressed, file, content
 
         compressed, file, content = create_compressed(tmpdir)
+        if use_pathlib:
+            compressed = pathlib.Path(compressed)
 
         utils._decompress(compressed)
 
@@ -138,7 +146,8 @@ class TestDatasetsUtils:
         with pytest.raises(RuntimeError):
             utils._decompress("foo.tar")
 
-    def test_decompress_remove_finished(self, tmpdir):
+    @pytest.mark.parametrize("use_pathlib", (True, False))
+    def test_decompress_remove_finished(self, tmpdir, use_pathlib):
         def create_compressed(root, content="this is the content"):
             file = os.path.join(root, "file")
             compressed = f"{file}.gz"
@@ -149,10 +158,20 @@ class TestDatasetsUtils:
             return compressed, file, content
 
         compressed, file, content = create_compressed(tmpdir)
+        print(f"{type(compressed)=}")
+        if use_pathlib:
+            compressed = pathlib.Path(compressed)
+            tmpdir = pathlib.Path(tmpdir)
 
-        utils.extract_archive(compressed, tmpdir, remove_finished=True)
+        extracted_dir = utils.extract_archive(compressed, tmpdir, remove_finished=True)
 
         assert not os.path.exists(compressed)
+        if use_pathlib:
+            assert isinstance(extracted_dir, pathlib.Path)
+            assert isinstance(compressed, pathlib.Path)
+        else:
+            assert isinstance(extracted_dir, str)
+            assert isinstance(compressed, str)
 
     @pytest.mark.parametrize("extension", [".gz", ".xz"])
     @pytest.mark.parametrize("remove_finished", [True, False])
@@ -165,7 +184,8 @@ class TestDatasetsUtils:
 
         mocked.assert_called_once_with(file, filename, remove_finished=remove_finished)
 
-    def test_extract_zip(self, tmpdir):
+    @pytest.mark.parametrize("use_pathlib", (True, False))
+    def test_extract_zip(self, tmpdir, use_pathlib):
         def create_archive(root, content="this is the content"):
             file = os.path.join(root, "dst.txt")
             archive = os.path.join(root, "archive.zip")
@@ -175,6 +195,8 @@ class TestDatasetsUtils:
 
             return archive, file, content
 
+        if use_pathlib:
+            tmpdir = pathlib.Path(tmpdir)
         archive, file, content = create_archive(tmpdir)
 
         utils.extract_archive(archive, tmpdir)
@@ -187,7 +209,8 @@ class TestDatasetsUtils:
     @pytest.mark.parametrize(
         "extension, mode", [(".tar", "w"), (".tar.gz", "w:gz"), (".tgz", "w:gz"), (".tar.xz", "w:xz")]
     )
-    def test_extract_tar(self, extension, mode, tmpdir):
+    @pytest.mark.parametrize("use_pathlib", (True, False))
+    def test_extract_tar(self, extension, mode, tmpdir, use_pathlib):
         def create_archive(root, extension, mode, content="this is the content"):
             src = os.path.join(root, "src.txt")
             dst = os.path.join(root, "dst.txt")
@@ -201,6 +224,8 @@ class TestDatasetsUtils:
 
             return archive, dst, content
 
+        if use_pathlib:
+            tmpdir = pathlib.Path(tmpdir)
         archive, file, content = create_archive(tmpdir, extension, mode)
 
         utils.extract_archive(archive, tmpdir)
@@ -214,6 +239,24 @@ class TestDatasetsUtils:
         assert "a" == utils.verify_str_arg("a", "arg", ("a",))
         pytest.raises(ValueError, utils.verify_str_arg, 0, ("a",), "arg")
         pytest.raises(ValueError, utils.verify_str_arg, "b", ("a",), "arg")
+
+    @pytest.mark.parametrize(
+        ("dtype", "actual_hex", "expected_hex"),
+        [
+            (torch.uint8, "01 23 45 67 89 AB CD EF", "01 23 45 67 89 AB CD EF"),
+            (torch.float16, "01 23 45 67 89 AB CD EF", "23 01 67 45 AB 89 EF CD"),
+            (torch.int32, "01 23 45 67 89 AB CD EF", "67 45 23 01 EF CD AB 89"),
+            (torch.float64, "01 23 45 67 89 AB CD EF", "EF CD AB 89 67 45 23 01"),
+        ],
+    )
+    def test_flip_byte_order(self, dtype, actual_hex, expected_hex):
+        def to_tensor(hex):
+            return torch.frombuffer(bytes.fromhex(hex), dtype=dtype)
+
+        assert_equal(
+            utils._flip_byte_order(to_tensor(actual_hex)),
+            to_tensor(expected_hex),
+        )
 
 
 @pytest.mark.parametrize(

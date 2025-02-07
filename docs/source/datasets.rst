@@ -1,3 +1,5 @@
+.. _datasets:
+
 Datasets
 ========
 
@@ -24,6 +26,15 @@ For example: ::
 All the datasets have almost similar API. They all have two common arguments:
 ``transform`` and  ``target_transform`` to transform the input and target respectively.
 You can also create your own datasets using the provided :ref:`base classes <base_classes_datasets>`.
+
+.. warning::
+
+    When a dataset object is created with ``download=True``, the files are first
+    downloaded and extracted in the root directory. This download logic is not
+    multi-process safe, so it may lead to conflicts / race conditions if it is
+    run within a distributed setting. In distributed mode, we recommend creating
+    a dummy dataset object to trigger the download logic *before* setting up
+    distributed mode.
 
 Image classification
 ~~~~~~~~~~~~~~~~~~~~
@@ -52,6 +63,7 @@ Image classification
     GTSRB
     INaturalist
     ImageNet
+    Imagenette
     KMNIST
     LFWPeople
     LSUN
@@ -80,7 +92,6 @@ Image detection or segmentation
     CocoDetection
     CelebA
     Cityscapes
-    GTSRB
     Kitti
     OxfordIIITPet
     SBDataset
@@ -111,11 +122,13 @@ Stereo Matching
     CarlaStereo
     Kitti2012Stereo
     Kitti2015Stereo
+    CREStereo
     FallingThingsStereo
     SceneFlowStereo
     SintelStereo
     InStereo2k
     ETH3DStereo
+    Middlebury2014Stereo
 
 Image pairs
 ~~~~~~~~~~~
@@ -145,9 +158,16 @@ Video classification
 
     HMDB51
     Kinetics
-    Kinetics400
     UCF101
 
+Video prediction
+~~~~~~~~~~~~~~~~~~~~
+
+.. autosummary::
+    :toctree: generated/
+    :template: class_dataset.rst
+
+    MovingMNIST
 
 .. _base_classes_datasets:
 
@@ -161,3 +181,12 @@ Base classes for custom datasets
     DatasetFolder
     ImageFolder
     VisionDataset
+
+Transforms v2
+-------------
+
+.. autosummary::
+    :toctree: generated/
+    :template: function.rst
+
+    wrap_dataset_for_transforms_v2

@@ -1,19 +1,18 @@
 import collections
 import os
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from xml.etree.ElementTree import Element as ET_Element
-
-from .vision import VisionDataset
 
 try:
     from defusedxml.ElementTree import parse as ET_parse
 except ImportError:
     from xml.etree.ElementTree import parse as ET_parse
-import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PIL import Image
 
 from .utils import download_and_extract_archive, verify_str_arg
+from .vision import VisionDataset
 
 DATASET_YEAR_DICT = {
     "2012": {
@@ -68,7 +67,7 @@ class _VOCBase(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         year: str = "2012",
         image_set: str = "train",
         download: bool = False,
@@ -77,20 +76,8 @@ class _VOCBase(VisionDataset):
         transforms: Optional[Callable] = None,
     ):
         super().__init__(root, transforms, transform, target_transform)
-        if year == "2007-test":
-            if image_set == "test":
-                warnings.warn(
-                    "Accessing the test image set of the year 2007 with year='2007-test' is deprecated "
-                    "since 0.12 and will be removed in 0.14. "
-                    "Please use the combination year='2007' and image_set='test' instead."
-                )
-                year = "2007"
-            else:
-                raise ValueError(
-                    "In the test image set of the year 2007 only image_set='test' is allowed. "
-                    "For all other image sets use year='2007' instead."
-                )
-        self.year = year
+
+        self.year = verify_str_arg(year, "year", valid_values=[str(yr) for yr in range(2007, 2013)])
 
         valid_image_sets = ["train", "trainval", "val"]
         if year == "2007":
@@ -134,14 +121,14 @@ class VOCSegmentation(_VOCBase):
     """`Pascal VOC <http://host.robots.ox.ac.uk/pascal/VOC/>`_ Segmentation Dataset.
 
     Args:
-        root (string): Root directory of the VOC Dataset.
+        root (str or ``pathlib.Path``): Root directory of the VOC Dataset.
         year (string, optional): The dataset year, supports years ``"2007"`` to ``"2012"``.
         image_set (string, optional): Select the image_set to use, ``"train"``, ``"trainval"`` or ``"val"``. If
             ``year=="2007"``, can also be ``"test"``.
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -178,7 +165,7 @@ class VOCDetection(_VOCBase):
     """`Pascal VOC <http://host.robots.ox.ac.uk/pascal/VOC/>`_ Detection Dataset.
 
     Args:
-        root (string): Root directory of the VOC Dataset.
+        root (str or ``pathlib.Path``): Root directory of the VOC Dataset.
         year (string, optional): The dataset year, supports years ``"2007"`` to ``"2012"``.
         image_set (string, optional): Select the image_set to use, ``"train"``, ``"trainval"`` or ``"val"``. If
             ``year=="2007"``, can also be ``"test"``.
@@ -186,7 +173,7 @@ class VOCDetection(_VOCBase):
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
             (default: alphabetic indexing of VOC's 20 classes).
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, required): A function/transform that takes in the
             target and transforms it.

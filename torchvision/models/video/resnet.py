@@ -303,7 +303,7 @@ def _video_resnet(
     model = VideoResNet(block, conv_makers, layers, stem, **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -332,6 +332,8 @@ class R3D_18_Weights(WeightsEnum):
                     "acc@5": 83.479,
                 }
             },
+            "_ops": 40.697,
+            "_file_size": 127.359,
         },
     )
     DEFAULT = KINETICS400_V1
@@ -350,6 +352,8 @@ class MC3_18_Weights(WeightsEnum):
                     "acc@5": 84.130,
                 }
             },
+            "_ops": 43.343,
+            "_file_size": 44.672,
         },
     )
     DEFAULT = KINETICS400_V1
@@ -368,6 +372,8 @@ class R2Plus1D_18_Weights(WeightsEnum):
                     "acc@5": 86.175,
                 }
             },
+            "_ops": 40.519,
+            "_file_size": 120.318,
         },
     )
     DEFAULT = KINETICS400_V1

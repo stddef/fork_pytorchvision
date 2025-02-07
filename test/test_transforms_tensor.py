@@ -2,16 +2,16 @@ import os
 import sys
 
 import numpy as np
+import PIL.Image
 import pytest
 import torch
-import torchvision.transforms._pil_constants as _pil_constants
 from common_utils import (
     _assert_approx_equal_tensor_to_pil,
     _assert_equal_tensor_to_pil,
     _create_data,
     _create_data_batch,
     assert_equal,
-    cpu_and_gpu,
+    cpu_and_cuda,
     float_dtypes,
     get_tmp_dir,
     int_dtypes,
@@ -20,7 +20,12 @@ from torchvision import transforms as T
 from torchvision.transforms import functional as F, InterpolationMode
 from torchvision.transforms.autoaugment import _apply_op
 
-NEAREST, BILINEAR, BICUBIC = InterpolationMode.NEAREST, InterpolationMode.BILINEAR, InterpolationMode.BICUBIC
+NEAREST, NEAREST_EXACT, BILINEAR, BICUBIC = (
+    InterpolationMode.NEAREST,
+    InterpolationMode.NEAREST_EXACT,
+    InterpolationMode.BILINEAR,
+    InterpolationMode.BICUBIC,
+)
 
 
 def _test_transform_vs_scripted(transform, s_transform, tensor, msg=None):
@@ -94,12 +99,12 @@ def _test_op(func, method, device, channels=3, fn_kwargs=None, meth_kwargs=None,
 
 def _test_fn_save_load(fn, tmpdir):
     scripted_fn = torch.jit.script(fn)
-    p = os.path.join(tmpdir, f"t_op_list_{fn.__name__ if hasattr(fn, '__name__') else fn.__class__.__name__}.pt")
+    p = os.path.join(tmpdir, f"t_op_list_{getattr(fn, '__name__', fn.__class__.__name__)}.pt")
     scripted_fn.save(p)
     _ = torch.jit.load(p)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "func,method,fn_kwargs,match_kwargs",
     [
@@ -124,7 +129,7 @@ def test_random(func, method, device, channels, fn_kwargs, match_kwargs):
 
 
 @pytest.mark.parametrize("seed", range(10))
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("channels", [1, 3])
 class TestColorJitter:
     @pytest.fixture(autouse=True)
@@ -200,7 +205,7 @@ class TestColorJitter:
         )
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("m", ["constant", "edge", "reflect", "symmetric"])
 @pytest.mark.parametrize("mul", [1, -1])
 def test_pad(m, mul, device):
@@ -223,7 +228,7 @@ def test_pad(m, mul, device):
     _test_op(F.pad, T.Pad, device=device, fn_kwargs=fn_kwargs, meth_kwargs=meth_kwargs)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_crop(device):
     fn_kwargs = {"top": 2, "left": 3, "height": 4, "width": 5}
     # Test transforms.RandomCrop with size and padding as tuple
@@ -251,7 +256,7 @@ def test_crop(device):
     _test_functional_op(F.crop, fn_kwargs=fn_kwargs, device=device)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "padding_config",
     [
@@ -277,7 +282,7 @@ def test_random_crop_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_center_crop(device, tmpdir):
     fn_kwargs = {"output_size": (4, 5)}
     meth_kwargs = {"size": (4, 5)}
@@ -307,7 +312,7 @@ def test_center_crop_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "fn, method, out_length",
     [
@@ -366,7 +371,7 @@ class TestResize:
     def test_resize_int(self, size):
         # TODO: Minimal check for bug-fix, improve this later
         x = torch.rand(3, 32, 46)
-        t = T.Resize(size=size)
+        t = T.Resize(size=size, antialias=True)
         y = t(x)
         # If size is an int, smaller edge of the image will be matched to this number.
         # i.e, if height > width, then image will be rescaled to (size * height / width, size).
@@ -374,11 +379,11 @@ class TestResize:
         assert y.shape[1] == size
         assert y.shape[2] == int(size * 46 / 32)
 
-    @pytest.mark.parametrize("device", cpu_and_gpu())
+    @pytest.mark.parametrize("device", cpu_and_cuda())
     @pytest.mark.parametrize("dt", [None, torch.float32, torch.float64])
     @pytest.mark.parametrize("size", [[32], [32, 32], (32, 32), [34, 35]])
     @pytest.mark.parametrize("max_size", [None, 35, 1000])
-    @pytest.mark.parametrize("interpolation", [BILINEAR, BICUBIC, NEAREST])
+    @pytest.mark.parametrize("interpolation", [BILINEAR, BICUBIC, NEAREST, NEAREST_EXACT])
     def test_resize_scripted(self, dt, size, max_size, interpolation, device):
         tensor, _ = _create_data(height=34, width=36, device=device)
         batch_tensors = torch.randint(0, 256, size=(4, 3, 44, 56), dtype=torch.uint8, device=device)
@@ -389,25 +394,25 @@ class TestResize:
         if max_size is not None and len(size) != 1:
             pytest.skip("Size should be an int or a sequence of length 1 if max_size is specified")
 
-        transform = T.Resize(size=size, interpolation=interpolation, max_size=max_size)
+        transform = T.Resize(size=size, interpolation=interpolation, max_size=max_size, antialias=True)
         s_transform = torch.jit.script(transform)
         _test_transform_vs_scripted(transform, s_transform, tensor)
         _test_transform_vs_scripted_on_batch(transform, s_transform, batch_tensors)
 
     def test_resize_save_load(self, tmpdir):
-        fn = T.Resize(size=[32])
+        fn = T.Resize(size=[32], antialias=True)
         _test_fn_save_load(fn, tmpdir)
 
-    @pytest.mark.parametrize("device", cpu_and_gpu())
+    @pytest.mark.parametrize("device", cpu_and_cuda())
     @pytest.mark.parametrize("scale", [(0.7, 1.2), [0.7, 1.2]])
     @pytest.mark.parametrize("ratio", [(0.75, 1.333), [0.75, 1.333]])
     @pytest.mark.parametrize("size", [(32,), [44], [32], [32, 32], (32, 32), [44, 55]])
-    @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR, BICUBIC])
+    @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR, BICUBIC, NEAREST_EXACT])
     @pytest.mark.parametrize("antialias", [None, True, False])
     def test_resized_crop(self, scale, ratio, size, interpolation, antialias, device):
 
-        if antialias and interpolation == NEAREST:
-            pytest.skip("Can not resize if interpolation mode is NEAREST and antialias=True")
+        if antialias and interpolation in {NEAREST, NEAREST_EXACT}:
+            pytest.skip(f"Can not resize if interpolation mode is {interpolation} and antialias=True")
 
         tensor = torch.randint(0, 256, size=(3, 44, 56), dtype=torch.uint8, device=device)
         batch_tensors = torch.randint(0, 256, size=(4, 3, 44, 56), dtype=torch.uint8, device=device)
@@ -419,7 +424,7 @@ class TestResize:
         _test_transform_vs_scripted_on_batch(transform, s_transform, batch_tensors)
 
     def test_resized_crop_save_load(self, tmpdir):
-        fn = T.RandomResizedCrop(size=[32])
+        fn = T.RandomResizedCrop(size=[32], antialias=True)
         _test_fn_save_load(fn, tmpdir)
 
 
@@ -438,42 +443,42 @@ def test_random_affine_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("shear", [15, 10.0, (5.0, 10.0), [-15, 15], [-10.0, 10.0, -11.0, 11.0]])
 def test_random_affine_shear(device, interpolation, shear):
     _test_random_affine_helper(device, degrees=0.0, interpolation=interpolation, shear=shear)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("scale", [(0.7, 1.2), [0.7, 1.2]])
 def test_random_affine_scale(device, interpolation, scale):
     _test_random_affine_helper(device, degrees=0.0, interpolation=interpolation, scale=scale)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("translate", [(0.1, 0.2), [0.2, 0.1]])
 def test_random_affine_translate(device, interpolation, translate):
     _test_random_affine_helper(device, degrees=0.0, interpolation=interpolation, translate=translate)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("degrees", [45, 35.0, (-45, 45), [-90.0, 90.0]])
 def test_random_affine_degrees(device, interpolation, degrees):
     _test_random_affine_helper(device, degrees=degrees, interpolation=interpolation)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("fill", [85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
 def test_random_affine_fill(device, interpolation, fill):
     _test_random_affine_helper(device, degrees=0.0, interpolation=interpolation, fill=fill)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("center", [(0, 0), [10, 10], None, (56, 44)])
 @pytest.mark.parametrize("expand", [True, False])
 @pytest.mark.parametrize("degrees", [45, 35.0, (-45, 45), [-90.0, 90.0]])
@@ -495,7 +500,7 @@ def test_random_rotate_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("distortion_scale", np.linspace(0.1, 1.0, num=20))
 @pytest.mark.parametrize("interpolation", [NEAREST, BILINEAR])
 @pytest.mark.parametrize("fill", [85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
@@ -515,7 +520,7 @@ def test_random_perspective_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "Klass, meth_kwargs",
     [(T.Grayscale, {"num_output_channels": 1}), (T.Grayscale, {"num_output_channels": 3}), (T.RandomGrayscale, {})],
@@ -525,7 +530,7 @@ def test_to_grayscale(device, Klass, meth_kwargs):
     _test_class_op(Klass, meth_kwargs=meth_kwargs, test_exact_match=False, device=device, tol=tol, agg_method="max")
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("in_dtype", int_dtypes() + float_dtypes())
 @pytest.mark.parametrize("out_dtype", int_dtypes() + float_dtypes())
 def test_convert_image_dtype(device, in_dtype, out_dtype):
@@ -556,7 +561,7 @@ def test_convert_image_dtype_save_load(tmpdir):
     _test_fn_save_load(fn, tmpdir)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("policy", [policy for policy in T.AutoAugmentPolicy])
 @pytest.mark.parametrize("fill", [None, 85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
 def test_autoaugment(device, policy, fill):
@@ -570,7 +575,7 @@ def test_autoaugment(device, policy, fill):
         _test_transform_vs_scripted_on_batch(transform, s_transform, batch_tensors)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("num_ops", [1, 2, 3])
 @pytest.mark.parametrize("magnitude", [7, 9, 11])
 @pytest.mark.parametrize("fill", [None, 85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
@@ -585,7 +590,7 @@ def test_randaugment(device, num_ops, magnitude, fill):
         _test_transform_vs_scripted_on_batch(transform, s_transform, batch_tensors)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("fill", [None, 85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
 def test_trivialaugmentwide(device, fill):
     tensor = torch.randint(0, 256, size=(3, 44, 56), dtype=torch.uint8, device=device)
@@ -598,7 +603,7 @@ def test_trivialaugmentwide(device, fill):
         _test_transform_vs_scripted_on_batch(transform, s_transform, batch_tensors)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize("fill", [None, 85, (10, -10, 10), 0.7, [0.0, 0.0, 0.0], [1], 1])
 def test_augmix(device, fill):
     tensor = torch.randint(0, 256, size=(3, 44, 56), dtype=torch.uint8, device=device)
@@ -635,13 +640,13 @@ def test_autoaugment__op_apply_shear(interpolation, mode):
             matrix = (1, level, 0, 0, 1, 0)
         elif mode == "Y":
             matrix = (1, 0, 0, level, 1, 0)
-        return pil_img.transform((image_size, image_size), _pil_constants.AFFINE, matrix, resample=resample)
+        return pil_img.transform((image_size, image_size), PIL.Image.AFFINE, matrix, resample=resample)
 
     t_img, pil_img = _create_data(image_size, image_size)
 
     resample_pil = {
-        F.InterpolationMode.NEAREST: _pil_constants.NEAREST,
-        F.InterpolationMode.BILINEAR: _pil_constants.BILINEAR,
+        F.InterpolationMode.NEAREST: PIL.Image.NEAREST,
+        F.InterpolationMode.BILINEAR: PIL.Image.BILINEAR,
     }[interpolation]
 
     level = 0.3
@@ -664,10 +669,20 @@ def test_autoaugment__op_apply_shear(interpolation, mode):
     _assert_approx_equal_tensor_to_pil(out, expected_out)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "config",
-    [{"value": 0.2}, {"value": "random"}, {"value": (0.2, 0.2, 0.2)}, {"value": "random", "ratio": (0.1, 0.2)}],
+    [
+        {},
+        {"value": 1},
+        {"value": 0.2},
+        {"value": "random"},
+        {"value": (1, 1, 1)},
+        {"value": (0.2, 0.2, 0.2)},
+        {"value": [1, 1, 1]},
+        {"value": [0.2, 0.2, 0.2]},
+        {"value": "random", "ratio": (0.1, 0.2)},
+    ],
 )
 def test_random_erasing(device, config):
     tensor, _ = _create_data(24, 32, channels=3, device=device)
@@ -692,7 +707,7 @@ def test_random_erasing_with_invalid_data():
         random_erasing(img)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_normalize(device, tmpdir):
     fn = T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     tensor, _ = _create_data(26, 34, device=device)
@@ -711,7 +726,7 @@ def test_normalize(device, tmpdir):
     scripted_fn.save(os.path.join(tmpdir, "t_norm.pt"))
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_linear_transformation(device, tmpdir):
     c, h, w = 3, 24, 32
 
@@ -737,7 +752,7 @@ def test_linear_transformation(device, tmpdir):
     scripted_fn.save(os.path.join(tmpdir, "t_norm.pt"))
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_compose(device):
     tensor, _ = _create_data(26, 34, device=device)
     tensor = tensor.to(dtype=torch.float32) / 255.0
@@ -765,7 +780,7 @@ def test_compose(device):
         torch.jit.script(t)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 def test_random_apply(device):
     tensor, _ = _create_data(26, 34, device=device)
     tensor = tensor.to(dtype=torch.float32) / 255.0
@@ -807,7 +822,7 @@ def test_random_apply(device):
             torch.jit.script(transforms)
 
 
-@pytest.mark.parametrize("device", cpu_and_gpu())
+@pytest.mark.parametrize("device", cpu_and_cuda())
 @pytest.mark.parametrize(
     "meth_kwargs",
     [
@@ -842,4 +857,36 @@ def test_gaussian_blur(device, channels, meth_kwargs):
         device=device,
         agg_method="max",
         tol=tol,
+    )
+
+
+@pytest.mark.parametrize("device", cpu_and_cuda())
+@pytest.mark.parametrize(
+    "fill",
+    [
+        1,
+        1.0,
+        [1],
+        [1.0],
+        (1,),
+        (1.0,),
+        [1, 2, 3],
+        [1.0, 2.0, 3.0],
+        (1, 2, 3),
+        (1.0, 2.0, 3.0),
+    ],
+)
+@pytest.mark.parametrize("channels", [1, 3])
+def test_elastic_transform(device, channels, fill):
+    if isinstance(fill, (list, tuple)) and len(fill) > 1 and channels == 1:
+        # For this the test would correctly fail, since the number of channels in the image does not match `fill`.
+        # Thus, this is not an issue in the transform, but rather a problem of parametrization that just gives the
+        # product of `fill` and `channels`.
+        return
+
+    _test_class_op(
+        T.ElasticTransform,
+        meth_kwargs=dict(fill=fill),
+        channels=channels,
+        device=device,
     )

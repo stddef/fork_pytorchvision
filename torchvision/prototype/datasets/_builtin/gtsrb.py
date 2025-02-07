@@ -2,14 +2,15 @@ import pathlib
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from torchdata.datapipes.iter import CSVDictParser, Demultiplexer, Filter, IterDataPipe, Mapper, Zipper
-from torchvision.prototype.datasets.utils import Dataset, HttpResource, OnlineResource
+from torchvision.prototype.datasets.utils import Dataset, EncodedImage, HttpResource, OnlineResource
 from torchvision.prototype.datasets.utils._internal import (
     hint_sharding,
     hint_shuffling,
     INFINITE_BUFFER_SIZE,
     path_comparator,
 )
-from torchvision.prototype.features import BoundingBox, EncodedImage, Label
+from torchvision.prototype.tv_tensors import Label
+from torchvision.tv_tensors import BoundingBoxes
 
 from .._api import register_dataset, register_info
 
@@ -75,17 +76,17 @@ class GTSRB(Dataset):
         (path, buffer), csv_info = data
         label = int(csv_info["ClassId"])
 
-        bounding_box = BoundingBox(
+        bounding_boxes = BoundingBoxes(
             [int(csv_info[k]) for k in ("Roi.X1", "Roi.Y1", "Roi.X2", "Roi.Y2")],
             format="xyxy",
-            image_size=(int(csv_info["Height"]), int(csv_info["Width"])),
+            spatial_size=(int(csv_info["Height"]), int(csv_info["Width"])),
         )
 
         return {
             "path": path,
             "image": EncodedImage.from_file(buffer),
             "label": Label(label, categories=self._categories),
-            "bounding_box": bounding_box,
+            "bounding_boxes": bounding_boxes,
         }
 
     def _datapipe(self, resource_dps: List[IterDataPipe]) -> IterDataPipe[Dict[str, Any]]:

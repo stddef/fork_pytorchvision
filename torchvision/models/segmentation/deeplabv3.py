@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Optional, Sequence
 
 import torch
 from torch import nn
@@ -46,9 +46,9 @@ class DeepLabV3(_SimpleSegmentationModel):
 
 
 class DeepLabHead(nn.Sequential):
-    def __init__(self, in_channels: int, num_classes: int) -> None:
+    def __init__(self, in_channels: int, num_classes: int, atrous_rates: Sequence[int] = (12, 24, 36)) -> None:
         super().__init__(
-            ASPP(in_channels, [12, 24, 36]),
+            ASPP(in_channels, atrous_rates),
             nn.Conv2d(256, 256, 3, padding=1, bias=False),
             nn.BatchNorm2d(256),
             nn.ReLU(),
@@ -83,7 +83,7 @@ class ASPPPooling(nn.Sequential):
 
 
 class ASPP(nn.Module):
-    def __init__(self, in_channels: int, atrous_rates: List[int], out_channels: int = 256) -> None:
+    def __init__(self, in_channels: int, atrous_rates: Sequence[int], out_channels: int = 256) -> None:
         super().__init__()
         modules = []
         modules.append(
@@ -152,6 +152,8 @@ class DeepLabV3_ResNet50_Weights(WeightsEnum):
                     "pixel_acc": 92.4,
                 }
             },
+            "_ops": 178.722,
+            "_file_size": 160.515,
         },
     )
     DEFAULT = COCO_WITH_VOC_LABELS_V1
@@ -171,6 +173,8 @@ class DeepLabV3_ResNet101_Weights(WeightsEnum):
                     "pixel_acc": 92.4,
                 }
             },
+            "_ops": 258.743,
+            "_file_size": 233.217,
         },
     )
     DEFAULT = COCO_WITH_VOC_LABELS_V1
@@ -190,6 +194,8 @@ class DeepLabV3_MobileNet_V3_Large_Weights(WeightsEnum):
                     "pixel_acc": 91.2,
                 }
             },
+            "_ops": 10.452,
+            "_file_size": 42.301,
         },
     )
     DEFAULT = COCO_WITH_VOC_LABELS_V1
@@ -260,8 +266,8 @@ def deeplabv3_resnet50(
 
     if weights is not None:
         weights_backbone = None
-        num_classes = _ovewrite_value_param(num_classes, len(weights.meta["categories"]))
-        aux_loss = _ovewrite_value_param(aux_loss, True)
+        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
+        aux_loss = _ovewrite_value_param("aux_loss", aux_loss, True)
     elif num_classes is None:
         num_classes = 21
 
@@ -269,7 +275,7 @@ def deeplabv3_resnet50(
     model = _deeplabv3_resnet(backbone, num_classes, aux_loss)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -316,8 +322,8 @@ def deeplabv3_resnet101(
 
     if weights is not None:
         weights_backbone = None
-        num_classes = _ovewrite_value_param(num_classes, len(weights.meta["categories"]))
-        aux_loss = _ovewrite_value_param(aux_loss, True)
+        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
+        aux_loss = _ovewrite_value_param("aux_loss", aux_loss, True)
     elif num_classes is None:
         num_classes = 21
 
@@ -325,7 +331,7 @@ def deeplabv3_resnet101(
     model = _deeplabv3_resnet(backbone, num_classes, aux_loss)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -370,8 +376,8 @@ def deeplabv3_mobilenet_v3_large(
 
     if weights is not None:
         weights_backbone = None
-        num_classes = _ovewrite_value_param(num_classes, len(weights.meta["categories"]))
-        aux_loss = _ovewrite_value_param(aux_loss, True)
+        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
+        aux_loss = _ovewrite_value_param("aux_loss", aux_loss, True)
     elif num_classes is None:
         num_classes = 21
 
@@ -379,19 +385,6 @@ def deeplabv3_mobilenet_v3_large(
     model = _deeplabv3_mobilenetv3(backbone, num_classes, aux_loss)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "deeplabv3_resnet50_coco": DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1.url,
-        "deeplabv3_resnet101_coco": DeepLabV3_ResNet101_Weights.COCO_WITH_VOC_LABELS_V1.url,
-        "deeplabv3_mobilenet_v3_large_coco": DeepLabV3_MobileNet_V3_Large_Weights.COCO_WITH_VOC_LABELS_V1.url,
-    }
-)
