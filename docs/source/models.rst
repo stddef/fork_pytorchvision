@@ -120,13 +120,12 @@ behavior, such as batch normalization. To switch between these modes, use
     # Set model to eval mode
     model.eval()
 
-Model Registration Mechanism
-----------------------------
+Listing and retrieving available models
+---------------------------------------
 
-.. betastatus:: registration mechanism
-
-As of v0.14, TorchVision offers a new model registration mechanism which allows retreaving models
-and weights by their names. Here are a few examples on how to use them:
+As of v0.14, TorchVision offers a new mechanism which allows listing and
+retrieving models and weights by their names. Here are a few examples on how to
+use them:
 
 .. code:: python
 
@@ -148,7 +147,7 @@ and weights by their names. Here are a few examples on how to use them:
     weights_enum2 = get_model_weights(torchvision.models.quantization.mobilenet_v3_large)
     assert weights_enum == weights_enum2
 
-Here are the available public methods of the model registration mechanism:
+Here are the available public functions to retrieve models and their corresponding weights:
 
 .. currentmodule:: torchvision.models
 .. autosummary::
@@ -173,7 +172,11 @@ Most pre-trained models can be accessed directly via PyTorch Hub without having 
     model = torch.hub.load("pytorch/vision", "resnet50", weights="IMAGENET1K_V2")
 
     # Option 2: passing weights param as enum
-    weights = torch.hub.load("pytorch/vision", "get_weight", weights="ResNet50_Weights.IMAGENET1K_V2")
+    weights = torch.hub.load(
+        "pytorch/vision",
+        "get_weight",
+        weights="ResNet50_Weights.IMAGENET1K_V2",
+    )
     model = torch.hub.load("pytorch/vision", "resnet50", weights=weights)
 
 You can also retrieve all the available weights of a specific model via PyTorch Hub by doing:
@@ -207,6 +210,7 @@ weights:
    models/efficientnetv2
    models/googlenet
    models/inception
+   models/maxvit
    models/mnasnet
    models/mobilenetv2
    models/mobilenetv3
@@ -226,10 +230,10 @@ Here is an example of how to use the pre-trained image classification models:
 
 .. code:: python
 
-    from torchvision.io import read_image
+    from torchvision.io import decode_image
     from torchvision.models import resnet50, ResNet50_Weights
 
-    img = read_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
+    img = decode_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
 
     # Step 1: Initialize model with the best available weights
     weights = ResNet50_Weights.DEFAULT
@@ -283,10 +287,10 @@ Here is an example of how to use the pre-trained quantized image classification 
 
 .. code:: python
 
-    from torchvision.io import read_image
+    from torchvision.io import decode_image
     from torchvision.models.quantization import resnet50, ResNet50_QuantizedWeights
 
-    img = read_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
+    img = decode_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
 
     # Step 1: Initialize model with the best available weights
     weights = ResNet50_QuantizedWeights.DEFAULT
@@ -339,11 +343,11 @@ Here is an example of how to use the pre-trained semantic segmentation models:
 
 .. code:: python
 
-    from torchvision.io.image import read_image
+    from torchvision.io.image import decode_image
     from torchvision.models.segmentation import fcn_resnet50, FCN_ResNet50_Weights
     from torchvision.transforms.functional import to_pil_image
 
-    img = read_image("gallery/assets/dog1.jpg")
+    img = decode_image("gallery/assets/dog1.jpg")
 
     # Step 1: Initialize model with the best available weights
     weights = FCN_ResNet50_Weights.DEFAULT
@@ -411,12 +415,12 @@ Here is an example of how to use the pre-trained object detection models:
 .. code:: python
 
 
-    from torchvision.io.image import read_image
+    from torchvision.io.image import decode_image
     from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
     from torchvision.utils import draw_bounding_boxes
     from torchvision.transforms.functional import to_pil_image
 
-    img = read_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
+    img = decode_image("test/assets/encode_jpeg/grace_hopper_517x606.jpg")
 
     # Step 1: Initialize model with the best available weights
     weights = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
@@ -517,6 +521,7 @@ pre-trained weights:
    models/video_mvit
    models/video_resnet
    models/video_s3d
+   models/video_swin_transformer
 
 |
 

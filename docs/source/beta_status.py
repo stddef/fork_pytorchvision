@@ -4,11 +4,12 @@ from docutils.parsers.rst import Directive
 
 class BetaStatus(Directive):
     has_content = True
+    text = "The {api_name} is in Beta stage, and backward compatibility is not guaranteed."
+    node = nodes.warning
 
     def run(self):
-        api_name = " ".join(self.content)
-        text = f"The {api_name} is in Beta stage, and backward compatibility is not guaranteed."
-        return [nodes.warning("", nodes.paragraph("", "", nodes.Text(text)))]
+        text = self.text.format(api_name=" ".join(self.content))
+        return [self.node("", nodes.paragraph("", "", nodes.Text(text)))]
 
 
 def setup(app):

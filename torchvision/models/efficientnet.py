@@ -1,6 +1,5 @@
 import copy
 import math
-import warnings
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -239,7 +238,6 @@ class EfficientNet(nn.Module):
         num_classes: int = 1000,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
         last_channel: Optional[int] = None,
-        **kwargs: Any,
     ) -> None:
         """
         EfficientNet V1 and V2 main class
@@ -262,16 +260,6 @@ class EfficientNet(nn.Module):
             and all([isinstance(s, _MBConvConfig) for s in inverted_residual_setting])
         ):
             raise TypeError("The inverted_residual_setting should be List[MBConvConfig]")
-
-        if "block" in kwargs:
-            warnings.warn(
-                "The parameter 'block' is deprecated since 0.13 and will be removed 0.15. "
-                "Please pass this information on 'MBConvConfig.block' instead."
-            )
-            if kwargs["block"] is not None:
-                for s in inverted_residual_setting:
-                    if isinstance(s, MBConvConfig):
-                        s.block = kwargs["block"]
 
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -369,7 +357,7 @@ def _efficientnet(
     model = EfficientNet(inverted_residual_setting, dropout, last_channel=last_channel, **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -451,7 +439,7 @@ _COMMON_META_V2 = {
 class EfficientNet_B0_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/rwightman/pytorch-image-models/
-        url="https://download.pytorch.org/models/efficientnet_b0_rwightman-3dd342df.pth",
+        url="https://download.pytorch.org/models/efficientnet_b0_rwightman-7f5810bc.pth",
         transforms=partial(
             ImageClassification, crop_size=224, resize_size=256, interpolation=InterpolationMode.BICUBIC
         ),
@@ -464,6 +452,8 @@ class EfficientNet_B0_Weights(WeightsEnum):
                     "acc@5": 93.532,
                 }
             },
+            "_ops": 0.386,
+            "_file_size": 20.451,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -473,7 +463,7 @@ class EfficientNet_B0_Weights(WeightsEnum):
 class EfficientNet_B1_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/rwightman/pytorch-image-models/
-        url="https://download.pytorch.org/models/efficientnet_b1_rwightman-533bc792.pth",
+        url="https://download.pytorch.org/models/efficientnet_b1_rwightman-bac287d4.pth",
         transforms=partial(
             ImageClassification, crop_size=240, resize_size=256, interpolation=InterpolationMode.BICUBIC
         ),
@@ -486,6 +476,8 @@ class EfficientNet_B1_Weights(WeightsEnum):
                     "acc@5": 94.186,
                 }
             },
+            "_ops": 0.687,
+            "_file_size": 30.134,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -504,6 +496,8 @@ class EfficientNet_B1_Weights(WeightsEnum):
                     "acc@5": 94.934,
                 }
             },
+            "_ops": 0.687,
+            "_file_size": 30.136,
             "_docs": """
                 These weights improve upon the results of the original paper by using a modified version of TorchVision's
                 `new training recipe
@@ -517,7 +511,7 @@ class EfficientNet_B1_Weights(WeightsEnum):
 class EfficientNet_B2_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/rwightman/pytorch-image-models/
-        url="https://download.pytorch.org/models/efficientnet_b2_rwightman-bcdf34b7.pth",
+        url="https://download.pytorch.org/models/efficientnet_b2_rwightman-c35c1473.pth",
         transforms=partial(
             ImageClassification, crop_size=288, resize_size=288, interpolation=InterpolationMode.BICUBIC
         ),
@@ -530,6 +524,8 @@ class EfficientNet_B2_Weights(WeightsEnum):
                     "acc@5": 95.310,
                 }
             },
+            "_ops": 1.088,
+            "_file_size": 35.174,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -539,7 +535,7 @@ class EfficientNet_B2_Weights(WeightsEnum):
 class EfficientNet_B3_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/rwightman/pytorch-image-models/
-        url="https://download.pytorch.org/models/efficientnet_b3_rwightman-cf984f9c.pth",
+        url="https://download.pytorch.org/models/efficientnet_b3_rwightman-b3899882.pth",
         transforms=partial(
             ImageClassification, crop_size=300, resize_size=320, interpolation=InterpolationMode.BICUBIC
         ),
@@ -552,6 +548,8 @@ class EfficientNet_B3_Weights(WeightsEnum):
                     "acc@5": 96.054,
                 }
             },
+            "_ops": 1.827,
+            "_file_size": 47.184,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -561,7 +559,7 @@ class EfficientNet_B3_Weights(WeightsEnum):
 class EfficientNet_B4_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/rwightman/pytorch-image-models/
-        url="https://download.pytorch.org/models/efficientnet_b4_rwightman-7eb33cd5.pth",
+        url="https://download.pytorch.org/models/efficientnet_b4_rwightman-23ab8bcd.pth",
         transforms=partial(
             ImageClassification, crop_size=380, resize_size=384, interpolation=InterpolationMode.BICUBIC
         ),
@@ -574,6 +572,8 @@ class EfficientNet_B4_Weights(WeightsEnum):
                     "acc@5": 96.594,
                 }
             },
+            "_ops": 4.394,
+            "_file_size": 74.489,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -583,7 +583,7 @@ class EfficientNet_B4_Weights(WeightsEnum):
 class EfficientNet_B5_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/lukemelas/EfficientNet-PyTorch/
-        url="https://download.pytorch.org/models/efficientnet_b5_lukemelas-b6417697.pth",
+        url="https://download.pytorch.org/models/efficientnet_b5_lukemelas-1a07897c.pth",
         transforms=partial(
             ImageClassification, crop_size=456, resize_size=456, interpolation=InterpolationMode.BICUBIC
         ),
@@ -596,6 +596,8 @@ class EfficientNet_B5_Weights(WeightsEnum):
                     "acc@5": 96.628,
                 }
             },
+            "_ops": 10.266,
+            "_file_size": 116.864,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -605,7 +607,7 @@ class EfficientNet_B5_Weights(WeightsEnum):
 class EfficientNet_B6_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/lukemelas/EfficientNet-PyTorch/
-        url="https://download.pytorch.org/models/efficientnet_b6_lukemelas-c76e70fd.pth",
+        url="https://download.pytorch.org/models/efficientnet_b6_lukemelas-24a108a5.pth",
         transforms=partial(
             ImageClassification, crop_size=528, resize_size=528, interpolation=InterpolationMode.BICUBIC
         ),
@@ -618,6 +620,8 @@ class EfficientNet_B6_Weights(WeightsEnum):
                     "acc@5": 96.916,
                 }
             },
+            "_ops": 19.068,
+            "_file_size": 165.362,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -627,7 +631,7 @@ class EfficientNet_B6_Weights(WeightsEnum):
 class EfficientNet_B7_Weights(WeightsEnum):
     IMAGENET1K_V1 = Weights(
         # Weights ported from https://github.com/lukemelas/EfficientNet-PyTorch/
-        url="https://download.pytorch.org/models/efficientnet_b7_lukemelas-dcc49843.pth",
+        url="https://download.pytorch.org/models/efficientnet_b7_lukemelas-c5b4e57e.pth",
         transforms=partial(
             ImageClassification, crop_size=600, resize_size=600, interpolation=InterpolationMode.BICUBIC
         ),
@@ -640,6 +644,8 @@ class EfficientNet_B7_Weights(WeightsEnum):
                     "acc@5": 96.908,
                 }
             },
+            "_ops": 37.746,
+            "_file_size": 254.675,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -664,6 +670,8 @@ class EfficientNet_V2_S_Weights(WeightsEnum):
                     "acc@5": 96.878,
                 }
             },
+            "_ops": 8.366,
+            "_file_size": 82.704,
             "_docs": """
                 These weights improve upon the results of the original paper by using a modified version of TorchVision's
                 `new training recipe
@@ -692,6 +700,8 @@ class EfficientNet_V2_M_Weights(WeightsEnum):
                     "acc@5": 97.156,
                 }
             },
+            "_ops": 24.582,
+            "_file_size": 208.01,
             "_docs": """
                 These weights improve upon the results of the original paper by using a modified version of TorchVision's
                 `new training recipe
@@ -723,6 +733,8 @@ class EfficientNet_V2_L_Weights(WeightsEnum):
                     "acc@5": 97.788,
                 }
             },
+            "_ops": 56.08,
+            "_file_size": 454.573,
             "_docs": """These weights are ported from the original paper.""",
         },
     )
@@ -755,7 +767,9 @@ def efficientnet_b0(
     weights = EfficientNet_B0_Weights.verify(weights)
 
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b0", width_mult=1.0, depth_mult=1.0)
-    return _efficientnet(inverted_residual_setting, 0.2, last_channel, weights, progress, **kwargs)
+    return _efficientnet(
+        inverted_residual_setting, kwargs.pop("dropout", 0.2), last_channel, weights, progress, **kwargs
+    )
 
 
 @register_model()
@@ -784,7 +798,9 @@ def efficientnet_b1(
     weights = EfficientNet_B1_Weights.verify(weights)
 
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b1", width_mult=1.0, depth_mult=1.1)
-    return _efficientnet(inverted_residual_setting, 0.2, last_channel, weights, progress, **kwargs)
+    return _efficientnet(
+        inverted_residual_setting, kwargs.pop("dropout", 0.2), last_channel, weights, progress, **kwargs
+    )
 
 
 @register_model()
@@ -813,7 +829,9 @@ def efficientnet_b2(
     weights = EfficientNet_B2_Weights.verify(weights)
 
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b2", width_mult=1.1, depth_mult=1.2)
-    return _efficientnet(inverted_residual_setting, 0.3, last_channel, weights, progress, **kwargs)
+    return _efficientnet(
+        inverted_residual_setting, kwargs.pop("dropout", 0.3), last_channel, weights, progress, **kwargs
+    )
 
 
 @register_model()
@@ -842,7 +860,14 @@ def efficientnet_b3(
     weights = EfficientNet_B3_Weights.verify(weights)
 
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b3", width_mult=1.2, depth_mult=1.4)
-    return _efficientnet(inverted_residual_setting, 0.3, last_channel, weights, progress, **kwargs)
+    return _efficientnet(
+        inverted_residual_setting,
+        kwargs.pop("dropout", 0.3),
+        last_channel,
+        weights,
+        progress,
+        **kwargs,
+    )
 
 
 @register_model()
@@ -871,7 +896,14 @@ def efficientnet_b4(
     weights = EfficientNet_B4_Weights.verify(weights)
 
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b4", width_mult=1.4, depth_mult=1.8)
-    return _efficientnet(inverted_residual_setting, 0.4, last_channel, weights, progress, **kwargs)
+    return _efficientnet(
+        inverted_residual_setting,
+        kwargs.pop("dropout", 0.4),
+        last_channel,
+        weights,
+        progress,
+        **kwargs,
+    )
 
 
 @register_model()
@@ -902,7 +934,7 @@ def efficientnet_b5(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b5", width_mult=1.6, depth_mult=2.2)
     return _efficientnet(
         inverted_residual_setting,
-        0.4,
+        kwargs.pop("dropout", 0.4),
         last_channel,
         weights,
         progress,
@@ -939,7 +971,7 @@ def efficientnet_b6(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b6", width_mult=1.8, depth_mult=2.6)
     return _efficientnet(
         inverted_residual_setting,
-        0.5,
+        kwargs.pop("dropout", 0.5),
         last_channel,
         weights,
         progress,
@@ -976,7 +1008,7 @@ def efficientnet_b7(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_b7", width_mult=2.0, depth_mult=3.1)
     return _efficientnet(
         inverted_residual_setting,
-        0.5,
+        kwargs.pop("dropout", 0.5),
         last_channel,
         weights,
         progress,
@@ -1014,7 +1046,7 @@ def efficientnet_v2_s(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_s")
     return _efficientnet(
         inverted_residual_setting,
-        0.2,
+        kwargs.pop("dropout", 0.2),
         last_channel,
         weights,
         progress,
@@ -1052,7 +1084,7 @@ def efficientnet_v2_m(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_m")
     return _efficientnet(
         inverted_residual_setting,
-        0.3,
+        kwargs.pop("dropout", 0.3),
         last_channel,
         weights,
         progress,
@@ -1090,28 +1122,10 @@ def efficientnet_v2_l(
     inverted_residual_setting, last_channel = _efficientnet_conf("efficientnet_v2_l")
     return _efficientnet(
         inverted_residual_setting,
-        0.4,
+        kwargs.pop("dropout", 0.4),
         last_channel,
         weights,
         progress,
         norm_layer=partial(nn.BatchNorm2d, eps=1e-03),
         **kwargs,
     )
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from ._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "efficientnet_b0": EfficientNet_B0_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b1": EfficientNet_B1_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b2": EfficientNet_B2_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b3": EfficientNet_B3_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b4": EfficientNet_B4_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b5": EfficientNet_B5_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b6": EfficientNet_B6_Weights.IMAGENET1K_V1.url,
-        "efficientnet_b7": EfficientNet_B7_Weights.IMAGENET1K_V1.url,
-    }
-)

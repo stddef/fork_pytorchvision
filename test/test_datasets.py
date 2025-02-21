@@ -8,6 +8,7 @@ import os
 import pathlib
 import pickle
 import random
+import re
 import shutil
 import string
 import unittest
@@ -21,12 +22,14 @@ import PIL
 import pytest
 import torch
 import torch.nn.functional as F
+from common_utils import combinations_grid
 from torchvision import datasets
+from torchvision.transforms import v2
 
 
 class STL10TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.STL10
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test", "unlabeled", "train+unlabeled"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test", "unlabeled", "train+unlabeled"))
 
     @staticmethod
     def _make_binary_file(num_elements, root, name):
@@ -112,9 +115,7 @@ class Caltech101TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Caltech101
     FEATURE_TYPES = (PIL.Image.Image, (int, np.ndarray, tuple))
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
-        target_type=("category", "annotation", ["category", "annotation"])
-    )
+    ADDITIONAL_CONFIGS = combinations_grid(target_type=("category", "annotation", ["category", "annotation"]))
     REQUIRED_PACKAGES = ("scipy",)
 
     def inject_fake_data(self, tmpdir, config):
@@ -183,6 +184,11 @@ class Caltech101TestCase(datasets_utils.ImageDatasetTestCase):
                 ), "Type of the combined target does not match the type of the corresponding individual target: "
                 f"{actual} is not {expected}",
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(target_type="category", transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class Caltech256TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Caltech256
@@ -190,7 +196,7 @@ class Caltech256TestCase(datasets_utils.ImageDatasetTestCase):
     def inject_fake_data(self, tmpdir, config):
         tmpdir = pathlib.Path(tmpdir) / "caltech256" / "256_ObjectCategories"
 
-        categories = ((1, "ak47"), (127, "laptop-101"), (257, "clutter"))
+        categories = ((1, "ak47"), (2, "american-flag"), (3, "backpack"))
         num_images_per_category = 2
 
         for idx, category in categories:
@@ -207,7 +213,7 @@ class Caltech256TestCase(datasets_utils.ImageDatasetTestCase):
 class WIDERFaceTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.WIDERFace
     FEATURE_TYPES = (PIL.Image.Image, (dict, type(None)))  # test split returns None as target
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val", "test"))
 
     def inject_fake_data(self, tmpdir, config):
         widerface_dir = pathlib.Path(tmpdir) / "widerface"
@@ -258,6 +264,11 @@ class WIDERFaceTestCase(datasets_utils.ImageDatasetTestCase):
 
         return split_to_num_examples[config["split"]]
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class CityScapesTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Cityscapes
@@ -268,8 +279,8 @@ class CityScapesTestCase(datasets_utils.ImageDatasetTestCase):
         "color",
     )
     ADDITIONAL_CONFIGS = (
-        *datasets_utils.combinations_grid(mode=("fine",), split=("train", "test", "val"), target_type=TARGET_TYPES),
-        *datasets_utils.combinations_grid(
+        *combinations_grid(mode=("fine",), split=("train", "test", "val"), target_type=TARGET_TYPES),
+        *combinations_grid(
             mode=("coarse",),
             split=("train", "train_extra", "val"),
             target_type=TARGET_TYPES,
@@ -382,11 +393,17 @@ class CityScapesTestCase(datasets_utils.ImageDatasetTestCase):
             assert isinstance(polygon_img, PIL.Image.Image)
             (polygon_target, info["expected_polygon_target"])
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        for target_type in ["instance", "semantic", ["instance", "semantic"]]:
+            with self.create_dataset(target_type=target_type, transform=v2.Resize(size=expected_size)) as (dataset, _):
+                datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class ImageNetTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.ImageNet
     REQUIRED_PACKAGES = ("scipy",)
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val"))
 
     def inject_fake_data(self, tmpdir, config):
         tmpdir = pathlib.Path(tmpdir)
@@ -413,10 +430,15 @@ class ImageNetTestCase(datasets_utils.ImageDatasetTestCase):
         torch.save((wnid_to_classes, None), tmpdir / "meta.bin")
         return num_examples
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class CIFAR10TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.CIFAR10
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(train=(True, False))
 
     _VERSION_CONFIG = dict(
         base_folder="cifar-10-batches-py",
@@ -489,7 +511,7 @@ class CelebATestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.CelebA
     FEATURE_TYPES = (PIL.Image.Image, (torch.Tensor, int, tuple, type(None)))
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("train", "valid", "test", "all"),
         target_type=("attr", "identity", "bbox", "landmarks", ["attr", "identity"]),
     )
@@ -510,7 +532,8 @@ class CelebATestCase(datasets_utils.ImageDatasetTestCase):
         self._create_bbox_txt(base_folder, num_images)
         self._create_landmarks_txt(base_folder, num_images)
 
-        return dict(num_examples=num_images_per_split[config["split"]], attr_names=attr_names)
+        num_samples = num_images_per_split.get(config["split"], 0) if isinstance(config["split"], str) else 0
+        return dict(num_examples=num_samples, attr_names=attr_names)
 
     def _create_split_txt(self, root):
         num_images_per_split = dict(train=4, valid=3, test=2)
@@ -607,25 +630,46 @@ class CelebATestCase(datasets_utils.ImageDatasetTestCase):
 
         assert merged_imgs_names == all_imgs_names
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        for target_type in ["identity", "bbox", ["identity", "bbox"]]:
+            with self.create_dataset(target_type=target_type, transform=v2.Resize(size=expected_size)) as (dataset, _):
+                datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
+    def test_invalid_split_list(self):
+        with pytest.raises(ValueError, match="Expected type str for argument split, but got type <class 'list'>."):
+            with self.create_dataset(split=[1]):
+                pass
+
+    def test_invalid_split_int(self):
+        with pytest.raises(ValueError, match="Expected type str for argument split, but got type <class 'int'>."):
+            with self.create_dataset(split=1):
+                pass
+
+    def test_invalid_split_value(self):
+        with pytest.raises(
+            ValueError,
+            match="Unknown value '{value}' for argument {arg}. Valid values are {{{valid_values}}}.".format(
+                value="invalid",
+                arg="split",
+                valid_values=("train", "valid", "test", "all"),
+            ),
+        ):
+            with self.create_dataset(split="invalid"):
+                pass
+
 
 class VOCSegmentationTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.VOCSegmentation
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image)
 
     ADDITIONAL_CONFIGS = (
-        *datasets_utils.combinations_grid(
-            year=[f"20{year:02d}" for year in range(7, 13)], image_set=("train", "val", "trainval")
-        ),
+        *combinations_grid(year=[f"20{year:02d}" for year in range(7, 13)], image_set=("train", "val", "trainval")),
         dict(year="2007", image_set="test"),
-        dict(year="2007-test", image_set="test"),
     )
 
     def inject_fake_data(self, tmpdir, config):
-        year, is_test_set = (
-            ("2007", True)
-            if config["year"] == "2007-test" or config["image_set"] == "test"
-            else (config["year"], False)
-        )
+        year, is_test_set = config["year"], config["image_set"] == "test"
         image_set = config["image_set"]
 
         base_dir = pathlib.Path(tmpdir)
@@ -701,6 +745,11 @@ class VOCSegmentationTestCase(datasets_utils.ImageDatasetTestCase):
 
         return data
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class VOCDetectionTestCase(VOCSegmentationTestCase):
     DATASET_CLASS = datasets.VOCDetection
@@ -720,6 +769,11 @@ class VOCDetectionTestCase(VOCSegmentationTestCase):
             object = objects[0]
 
             assert object == info["annotation"]
+
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
 
 
 class CocoDetectionTestCase(datasets_utils.ImageDatasetTestCase):
@@ -751,28 +805,52 @@ class CocoDetectionTestCase(datasets_utils.ImageDatasetTestCase):
 
         annotation_folder = tmpdir / self._ANNOTATIONS_FOLDER
         os.makedirs(annotation_folder)
+
+        segmentation_kind = config.pop("segmentation_kind", "list")
         info = self._create_annotation_file(
-            annotation_folder, self._ANNOTATIONS_FILE, file_names, num_annotations_per_image
+            annotation_folder,
+            self._ANNOTATIONS_FILE,
+            file_names,
+            num_annotations_per_image,
+            segmentation_kind=segmentation_kind,
         )
 
         info["num_examples"] = num_images
         return info
 
-    def _create_annotation_file(self, root, name, file_names, num_annotations_per_image):
+    def _create_annotation_file(self, root, name, file_names, num_annotations_per_image, segmentation_kind="list"):
         image_ids = [int(file_name.stem) for file_name in file_names]
         images = [dict(file_name=str(file_name), id=id) for file_name, id in zip(file_names, image_ids)]
 
-        annotations, info = self._create_annotations(image_ids, num_annotations_per_image)
+        annotations, info = self._create_annotations(image_ids, num_annotations_per_image, segmentation_kind)
         self._create_json(root, name, dict(images=images, annotations=annotations))
 
         return info
 
-    def _create_annotations(self, image_ids, num_annotations_per_image):
-        annotations = datasets_utils.combinations_grid(
-            image_id=image_ids, bbox=([1.0, 2.0, 3.0, 4.0],) * num_annotations_per_image
-        )
-        for id, annotation in enumerate(annotations):
-            annotation["id"] = id
+    def _create_annotations(self, image_ids, num_annotations_per_image, segmentation_kind="list"):
+        annotations = []
+        annotion_id = 0
+
+        for image_id in itertools.islice(itertools.cycle(image_ids), len(image_ids) * num_annotations_per_image):
+            segmentation = {
+                "list": [torch.rand(8).tolist()],
+                "rle": {"size": [10, 10], "counts": [1]},
+                "rle_encoded": {"size": [2400, 2400], "counts": "PQRQ2[1\\Y2f0gNVNRhMg2"},
+                "bad": 123,
+            }[segmentation_kind]
+
+            annotations.append(
+                dict(
+                    image_id=image_id,
+                    id=annotion_id,
+                    bbox=torch.rand(4).tolist(),
+                    segmentation=segmentation,
+                    category_id=int(torch.randint(91, ())),
+                    area=float(torch.rand(1)),
+                    iscrowd=int(torch.randint(2, size=(1,))),
+                )
+            )
+            annotion_id += 1
         return annotations, dict()
 
     def _create_json(self, root, name, content):
@@ -781,13 +859,39 @@ class CocoDetectionTestCase(datasets_utils.ImageDatasetTestCase):
             json.dump(content, fh)
         return file
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
+    def test_slice_error(self):
+        with self.create_dataset() as (dataset, _):
+            with pytest.raises(ValueError, match="Index must be of type integer"):
+                dataset[:2]
+
+    def test_segmentation_kind(self):
+        if isinstance(self, CocoCaptionsTestCase):
+            return
+
+        for segmentation_kind in ("list", "rle", "rle_encoded"):
+            config = {"segmentation_kind": segmentation_kind}
+            with self.create_dataset(config) as (dataset, _):
+                dataset = datasets.wrap_dataset_for_transforms_v2(dataset, target_keys="all")
+                list(dataset)
+
+        config = {"segmentation_kind": "bad"}
+        with self.create_dataset(config) as (dataset, _):
+            dataset = datasets.wrap_dataset_for_transforms_v2(dataset, target_keys="all")
+            with pytest.raises(ValueError, match="COCO segmentation expected to be a dict or a list"):
+                list(dataset)
+
 
 class CocoCaptionsTestCase(CocoDetectionTestCase):
     DATASET_CLASS = datasets.CocoCaptions
 
-    def _create_annotations(self, image_ids, num_annotations_per_image):
+    def _create_annotations(self, image_ids, num_annotations_per_image, segmentation_kind="list"):
         captions = [str(idx) for idx in range(num_annotations_per_image)]
-        annotations = datasets_utils.combinations_grid(image_id=image_ids, caption=captions)
+        annotations = combinations_grid(image_id=image_ids, caption=captions)
         for id, annotation in enumerate(annotations):
             annotation["id"] = id
         return annotations, dict(captions=captions)
@@ -797,11 +901,16 @@ class CocoCaptionsTestCase(CocoDetectionTestCase):
             _, captions = dataset[0]
             assert tuple(captions) == tuple(info["captions"])
 
+    def test_transforms_v2_wrapper_spawn(self):
+        # We need to define this method, because otherwise the test from the super class will
+        # be run
+        pytest.skip("CocoCaptions is currently not supported by the v2 wrapper.")
+
 
 class UCF101TestCase(datasets_utils.VideoDatasetTestCase):
     DATASET_CLASS = datasets.UCF101
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(fold=(1, 2, 3), train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(fold=(1, 2, 3), train=(True, False))
 
     _VIDEO_FOLDER = "videos"
     _ANNOTATIONS_FOLDER = "annotations"
@@ -862,9 +971,7 @@ class LSUNTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.LSUN
 
     REQUIRED_PACKAGES = ("lmdb",)
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
-        classes=("train", "test", "val", ["bedroom_train", "church_outdoor_train"])
-    )
+    ADDITIONAL_CONFIGS = combinations_grid(classes=("train", "test", "val", ["bedroom_train", "church_outdoor_train"]))
 
     _CATEGORIES = (
         "bedroom",
@@ -949,7 +1056,7 @@ class LSUNTestCase(datasets_utils.ImageDatasetTestCase):
 
 class KineticsTestCase(datasets_utils.VideoDatasetTestCase):
     DATASET_CLASS = datasets.Kinetics
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val"), num_classes=("400", "600", "700"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val"), num_classes=("400", "600", "700"))
 
     def inject_fake_data(self, tmpdir, config):
         classes = ("Abseiling", "Zumba")
@@ -965,30 +1072,17 @@ class KineticsTestCase(datasets_utils.VideoDatasetTestCase):
             )
         return num_videos_per_class * len(classes)
 
-
-class Kinetics400TestCase(datasets_utils.VideoDatasetTestCase):
-    DATASET_CLASS = datasets.Kinetics400
-
-    def inject_fake_data(self, tmpdir, config):
-        classes = ("Abseiling", "Zumba")
-        num_videos_per_class = 2
-
-        digits = string.ascii_letters + string.digits + "-_"
-        for cls in classes:
-            datasets_utils.create_video_folder(
-                tmpdir,
-                cls,
-                lambda _: f"{datasets_utils.create_random_string(11, digits)}.avi",
-                num_videos_per_class,
-            )
-
-        return num_videos_per_class * len(classes)
+    @pytest.mark.xfail(reason="FIXME")
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(output_format="TCHW", transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
 
 
 class HMDB51TestCase(datasets_utils.VideoDatasetTestCase):
     DATASET_CLASS = datasets.HMDB51
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(fold=(1, 2, 3), train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(fold=(1, 2, 3), train=(True, False))
 
     _VIDEO_FOLDER = "videos"
     _SPLITS_FOLDER = "splits"
@@ -1048,7 +1142,7 @@ class HMDB51TestCase(datasets_utils.VideoDatasetTestCase):
 class OmniglotTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Omniglot
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(background=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(background=(True, False))
 
     def inject_fake_data(self, tmpdir, config):
         target_folder = (
@@ -1128,7 +1222,7 @@ class SEMEIONTestCase(datasets_utils.ImageDatasetTestCase):
 class USPSTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.USPS
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(train=(True, False))
 
     def inject_fake_data(self, tmpdir, config):
         num_images = 2 if config["train"] else 1
@@ -1150,7 +1244,7 @@ class SBDatasetTestCase(datasets_utils.ImageDatasetTestCase):
 
     REQUIRED_PACKAGES = ("scipy.io", "scipy.sparse")
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         image_set=("train", "val", "train_noval"), mode=("boundaries", "segmentation")
     )
 
@@ -1211,6 +1305,11 @@ class SBDatasetTestCase(datasets_utils.ImageDatasetTestCase):
     def _file_stem(self, idx):
         return f"2008_{idx:06d}"
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(mode="segmentation", transforms=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class FakeDataTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FakeData
@@ -1236,7 +1335,7 @@ class PhotoTourTestCase(datasets_utils.ImageDatasetTestCase):
     _TRAIN_FEATURE_TYPES = (torch.Tensor,)
     _TEST_FEATURE_TYPES = (torch.Tensor, torch.Tensor, torch.Tensor)
 
-    datasets_utils.combinations_grid(train=(True, False))
+    combinations_grid(train=(True, False))
 
     _NAME = "liberty"
 
@@ -1395,7 +1494,7 @@ class Flickr30kTestCase(Flickr8kTestCase):
 class MNISTTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.MNIST
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(train=(True, False))
 
     _MAGIC_DTYPES = {
         torch.uint8: 8,
@@ -1465,7 +1564,7 @@ class EMNISTTestCase(MNISTTestCase):
     DATASET_CLASS = datasets.EMNIST
 
     DEFAULT_CONFIG = dict(split="byclass")
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("byclass", "bymerge", "balanced", "letters", "digits", "mnist"), train=(True, False)
     )
 
@@ -1476,7 +1575,7 @@ class EMNISTTestCase(MNISTTestCase):
 class QMNISTTestCase(MNISTTestCase):
     DATASET_CLASS = datasets.QMNIST
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(what=("train", "test", "test10k", "nist"))
+    ADDITIONAL_CONFIGS = combinations_grid(what=("train", "test", "test10k", "nist"))
 
     _LABELS_SIZE = (8,)
     _LABELS_DTYPE = torch.int32
@@ -1518,30 +1617,51 @@ class QMNISTTestCase(MNISTTestCase):
             assert len(dataset) == info["num_examples"] - 10000
 
 
+class MovingMNISTTestCase(datasets_utils.DatasetTestCase):
+    DATASET_CLASS = datasets.MovingMNIST
+    FEATURE_TYPES = (torch.Tensor,)
+
+    ADDITIONAL_CONFIGS = combinations_grid(split=(None, "train", "test"), split_ratio=(10, 1, 19))
+
+    _NUM_FRAMES = 20
+
+    def inject_fake_data(self, tmpdir, config):
+        base_folder = os.path.join(tmpdir, self.DATASET_CLASS.__name__)
+        os.makedirs(base_folder, exist_ok=True)
+        num_samples = 5
+        data = np.concatenate(
+            [
+                np.zeros((config["split_ratio"], num_samples, 64, 64)),
+                np.ones((self._NUM_FRAMES - config["split_ratio"], num_samples, 64, 64)),
+            ]
+        )
+        np.save(os.path.join(base_folder, "mnist_test_seq.npy"), data)
+        return num_samples
+
+    @datasets_utils.test_all_configs
+    def test_split(self, config):
+        with self.create_dataset(config) as (dataset, _):
+            if config["split"] == "train":
+                assert (dataset.data == 0).all()
+            elif config["split"] == "test":
+                assert (dataset.data == 1).all()
+            else:
+                assert dataset.data.size()[1] == self._NUM_FRAMES
+
+
 class DatasetFolderTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.DatasetFolder
 
-    # The dataset has no fixed return type since it is defined by the loader parameter. For testing, we use a loader
-    # that simply returns the path as type 'str' instead of loading anything. See the 'dataset_args()' method.
-    FEATURE_TYPES = (str, int)
-
-    _IMAGE_EXTENSIONS = ("jpg", "png")
-    _VIDEO_EXTENSIONS = ("avi", "mp4")
-    _EXTENSIONS = (*_IMAGE_EXTENSIONS, *_VIDEO_EXTENSIONS)
+    _EXTENSIONS = ("jpg", "png")
 
     # DatasetFolder has two mutually exclusive parameters: 'extensions' and 'is_valid_file'. One of both is required.
     # We only iterate over different 'extensions' here and handle the tests for 'is_valid_file' in the
     # 'test_is_valid_file()' method.
     DEFAULT_CONFIG = dict(extensions=_EXTENSIONS)
-    ADDITIONAL_CONFIGS = (
-        *datasets_utils.combinations_grid(extensions=[(ext,) for ext in _IMAGE_EXTENSIONS]),
-        dict(extensions=_IMAGE_EXTENSIONS),
-        *datasets_utils.combinations_grid(extensions=[(ext,) for ext in _VIDEO_EXTENSIONS]),
-        dict(extensions=_VIDEO_EXTENSIONS),
-    )
+    ADDITIONAL_CONFIGS = combinations_grid(extensions=[(ext,) for ext in _EXTENSIONS])
 
     def dataset_args(self, tmpdir, config):
-        return tmpdir, lambda x: x
+        return tmpdir, datasets.folder.pil_loader
 
     def inject_fake_data(self, tmpdir, config):
         extensions = config["extensions"] or self._is_valid_file_to_extensions(config["is_valid_file"])
@@ -1552,17 +1672,15 @@ class DatasetFolderTestCase(datasets_utils.ImageDatasetTestCase):
             if ext not in extensions:
                 continue
 
-            create_example_folder = (
-                datasets_utils.create_image_folder
-                if ext in self._IMAGE_EXTENSIONS
-                else datasets_utils.create_video_folder
-            )
-
             num_examples = torch.randint(1, 3, size=()).item()
-            create_example_folder(tmpdir, cls, lambda idx: self._file_name_fn(cls, ext, idx), num_examples)
+            datasets_utils.create_image_folder(tmpdir, cls, lambda idx: self._file_name_fn(cls, ext, idx), num_examples)
 
             num_examples_total += num_examples
             classes.append(cls)
+
+        if config.pop("make_empty_class", False):
+            os.makedirs(pathlib.Path(tmpdir) / "empty_class")
+            classes.append("empty_class")
 
         return dict(num_examples=num_examples_total, classes=classes)
 
@@ -1587,6 +1705,23 @@ class DatasetFolderTestCase(datasets_utils.ImageDatasetTestCase):
         with self.create_dataset(config) as (dataset, info):
             assert len(dataset.classes) == len(info["classes"])
             assert all([a == b for a, b in zip(dataset.classes, info["classes"])])
+
+    def test_allow_empty(self):
+        config = {
+            "extensions": self._EXTENSIONS,
+            "make_empty_class": True,
+        }
+
+        config["allow_empty"] = True
+        with self.create_dataset(config) as (dataset, info):
+            assert "empty_class" in dataset.classes
+            assert len(dataset.classes) == len(info["classes"])
+            assert all([a == b for a, b in zip(dataset.classes, info["classes"])])
+
+        config["allow_empty"] = False
+        with pytest.raises(FileNotFoundError, match="Found no valid file"):
+            with self.create_dataset(config) as (dataset, info):
+                pass
 
 
 class ImageFolderTestCase(datasets_utils.ImageDatasetTestCase):
@@ -1613,7 +1748,7 @@ class ImageFolderTestCase(datasets_utils.ImageDatasetTestCase):
 class KittiTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Kitti
     FEATURE_TYPES = (PIL.Image.Image, (list, type(None)))  # test split returns None as target
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(train=(True, False))
+    ADDITIONAL_CONFIGS = combinations_grid(train=(True, False))
 
     def inject_fake_data(self, tmpdir, config):
         kitti_dir = os.path.join(tmpdir, "Kitti", "raw")
@@ -1645,11 +1780,16 @@ class KittiTestCase(datasets_utils.ImageDatasetTestCase):
 
         return split_to_num_examples[config["train"]]
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class SvhnTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.SVHN
     REQUIRED_PACKAGES = ("scipy",)
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test", "extra"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test", "extra"))
 
     def inject_fake_data(self, tmpdir, config):
         import scipy.io as sio
@@ -1670,7 +1810,7 @@ class SvhnTestCase(datasets_utils.ImageDatasetTestCase):
 
 class Places365TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Places365
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("train-standard", "train-challenge", "val"),
         small=(False, True),
     )
@@ -1752,17 +1892,12 @@ class Places365TestCase(datasets_utils.ImageDatasetTestCase):
         with self.create_dataset() as (dataset, _):
             assert dataset.class_to_idx == class_to_idx
 
-    def test_images_download_preexisting(self):
-        with pytest.raises(RuntimeError):
-            with self.create_dataset({"download": True}):
-                pass
-
 
 class INaturalistTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.INaturalist
     FEATURE_TYPES = (PIL.Image.Image, (int, tuple))
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         target_type=("kingdom", "full", "genus", ["kingdom", "phylum", "class", "order", "family", "genus", "full"]),
         version=("2021_train",),
     )
@@ -1799,7 +1934,7 @@ class INaturalistTestCase(datasets_utils.ImageDatasetTestCase):
 class LFWPeopleTestCase(datasets_utils.DatasetTestCase):
     DATASET_CLASS = datasets.LFWPeople
     FEATURE_TYPES = (PIL.Image.Image, int)
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("10fold", "train", "test"), image_set=("original", "funneled", "deepfunneled")
     )
     _IMAGES_DIR = {"original": "lfw", "funneled": "lfw_funneled", "deepfunneled": "lfw-deepfunneled"}
@@ -1875,7 +2010,7 @@ class LFWPairsTestCase(LFWPeopleTestCase):
 
 class SintelTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Sintel
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"), pass_name=("clean", "final", "both"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"), pass_name=("clean", "final", "both"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
 
     FLOW_H, FLOW_W = 3, 4
@@ -1943,7 +2078,7 @@ class SintelTestCase(datasets_utils.ImageDatasetTestCase):
 
 class KittiFlowTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.KittiFlow
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
 
     def inject_fake_data(self, tmpdir, config):
@@ -2003,7 +2138,7 @@ class KittiFlowTestCase(datasets_utils.ImageDatasetTestCase):
 
 class FlyingChairsTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FlyingChairs
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
 
     FLOW_H, FLOW_W = 3, 4
@@ -2058,7 +2193,7 @@ class FlyingChairsTestCase(datasets_utils.ImageDatasetTestCase):
 
 class FlyingThings3DTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FlyingThings3D
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("train", "test"), pass_name=("clean", "final", "both"), camera=("left", "right", "both")
     )
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
@@ -2195,7 +2330,7 @@ class Food101TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Food101
     FEATURE_TYPES = (PIL.Image.Image, int)
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
 
     def inject_fake_data(self, tmpdir: str, config):
         root_folder = pathlib.Path(tmpdir) / "food-101"
@@ -2230,7 +2365,7 @@ class Food101TestCase(datasets_utils.ImageDatasetTestCase):
 
 class FGVCAircraftTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FGVCAircraft
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("train", "val", "trainval", "test"), annotation_level=("variant", "family", "manufacturer")
     )
 
@@ -2313,7 +2448,7 @@ class DTDTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.DTD
     FEATURE_TYPES = (PIL.Image.Image, int)
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("train", "test", "val"),
         # There is no need to test the whole matrix here, since each fold is treated exactly the same
         partition=(1, 5, 10),
@@ -2347,7 +2482,7 @@ class DTDTestCase(datasets_utils.ImageDatasetTestCase):
 
 class FER2013TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FER2013
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
 
     FEATURE_TYPES = (PIL.Image.Image, (int, type(None)))
 
@@ -2355,34 +2490,74 @@ class FER2013TestCase(datasets_utils.ImageDatasetTestCase):
         base_folder = os.path.join(tmpdir, "fer2013")
         os.makedirs(base_folder)
 
-        num_samples = 5
-        with open(os.path.join(base_folder, f"{config['split']}.csv"), "w", newline="") as file:
-            writer = csv.DictWriter(
-                file,
-                fieldnames=("emotion", "pixels") if config["split"] == "train" else ("pixels",),
-                quoting=csv.QUOTE_NONNUMERIC,
-                quotechar='"',
-            )
-            writer.writeheader()
-            for _ in range(num_samples):
-                row = dict(
-                    pixels=" ".join(
-                        str(pixel) for pixel in datasets_utils.create_image_or_video_tensor((48, 48)).view(-1).tolist()
-                    )
-                )
-                if config["split"] == "train":
-                    row["emotion"] = str(int(torch.randint(0, 7, ())))
+        use_icml = config.pop("use_icml", False)
+        use_fer = config.pop("use_fer", False)
 
-                writer.writerow(row)
+        num_samples = 5
+
+        if use_icml or use_fer:
+            pixels_key, usage_key = (" pixels", " Usage") if use_icml else ("pixels", "Usage")
+            fieldnames = ("emotion", usage_key, pixels_key) if use_icml else ("emotion", pixels_key, usage_key)
+            filename = "icml_face_data.csv" if use_icml else "fer2013.csv"
+            with open(os.path.join(base_folder, filename), "w", newline="") as file:
+                writer = csv.DictWriter(
+                    file,
+                    fieldnames=fieldnames,
+                    quoting=csv.QUOTE_NONNUMERIC,
+                    quotechar='"',
+                )
+                writer.writeheader()
+                for i in range(num_samples):
+                    row = {
+                        "emotion": str(int(torch.randint(0, 7, ()))),
+                        usage_key: "Training" if i % 2 else "PublicTest",
+                        pixels_key: " ".join(
+                            str(pixel)
+                            for pixel in datasets_utils.create_image_or_video_tensor((48, 48)).view(-1).tolist()
+                        ),
+                    }
+
+                    writer.writerow(row)
+        else:
+            with open(os.path.join(base_folder, f"{config['split']}.csv"), "w", newline="") as file:
+                writer = csv.DictWriter(
+                    file,
+                    fieldnames=("emotion", "pixels") if config["split"] == "train" else ("pixels",),
+                    quoting=csv.QUOTE_NONNUMERIC,
+                    quotechar='"',
+                )
+                writer.writeheader()
+                for _ in range(num_samples):
+                    row = dict(
+                        pixels=" ".join(
+                            str(pixel)
+                            for pixel in datasets_utils.create_image_or_video_tensor((48, 48)).view(-1).tolist()
+                        )
+                    )
+                    if config["split"] == "train":
+                        row["emotion"] = str(int(torch.randint(0, 7, ())))
+
+                    writer.writerow(row)
 
         return num_samples
+
+    def test_icml_file(self):
+        config = {"split": "test"}
+        with self.create_dataset(config=config) as (dataset, _):
+            assert all(s[1] is None for s in dataset)
+
+        for split in ("train", "test"):
+            for d in ({"use_icml": True}, {"use_fer": True}):
+                config = {"split": split, **d}
+                with self.create_dataset(config=config) as (dataset, _):
+                    assert all(s[1] is not None for s in dataset)
 
 
 class GTSRBTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.GTSRB
     FEATURE_TYPES = (PIL.Image.Image, int)
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
 
     def inject_fake_data(self, tmpdir: str, config):
         root_folder = os.path.join(tmpdir, "gtsrb")
@@ -2432,7 +2607,7 @@ class CLEVRClassificationTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.CLEVRClassification
     FEATURE_TYPES = (PIL.Image.Image, (int, type(None)))
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val", "test"))
 
     def inject_fake_data(self, tmpdir, config):
         data_folder = pathlib.Path(tmpdir) / "clevr" / "CLEVR_v1.0"
@@ -2464,9 +2639,9 @@ class OxfordIIITPetTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.OxfordIIITPet
     FEATURE_TYPES = (PIL.Image.Image, (int, PIL.Image.Image, tuple, type(None)))
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         split=("trainval", "test"),
-        target_types=("category", "segmentation", ["category", "segmentation"], []),
+        target_types=("category", "binary-category", "segmentation", ["category", "segmentation"], []),
     )
 
     def inject_fake_data(self, tmpdir, config):
@@ -2519,11 +2694,16 @@ class OxfordIIITPetTestCase(datasets_utils.ImageDatasetTestCase):
         breed_id = "-1"
         return (image_id, class_id, species, breed_id)
 
+    def test_transforms_v2_wrapper_spawn(self):
+        expected_size = (123, 321)
+        with self.create_dataset(transform=v2.Resize(size=expected_size)) as (dataset, _):
+            datasets_utils.check_transforms_v2_wrapper_spawn(dataset, expected_size=expected_size)
+
 
 class StanfordCarsTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.StanfordCars
     REQUIRED_PACKAGES = ("scipy",)
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
 
     def inject_fake_data(self, tmpdir, config):
         import scipy.io as io
@@ -2567,7 +2747,7 @@ class StanfordCarsTestCase(datasets_utils.ImageDatasetTestCase):
 class Country211TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Country211
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "valid", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "valid", "test"))
 
     def inject_fake_data(self, tmpdir: str, config):
         split_folder = pathlib.Path(tmpdir) / "country211" / config["split"]
@@ -2594,7 +2774,7 @@ class Country211TestCase(datasets_utils.ImageDatasetTestCase):
 class Flowers102TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Flowers102
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val", "test"))
     REQUIRED_PACKAGES = ("scipy",)
 
     def inject_fake_data(self, tmpdir: str, config):
@@ -2630,7 +2810,7 @@ class Flowers102TestCase(datasets_utils.ImageDatasetTestCase):
 class PCAMTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.PCAM
 
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val", "test"))
     REQUIRED_PACKAGES = ("h5py",)
 
     def inject_fake_data(self, tmpdir: str, config):
@@ -2652,7 +2832,7 @@ class PCAMTestCase(datasets_utils.ImageDatasetTestCase):
 
 class RenderedSST2TestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.RenderedSST2
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "val", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "val", "test"))
     SPLIT_TO_FOLDER = {"train": "train", "val": "valid", "test": "test"}
 
     def inject_fake_data(self, tmpdir: str, config):
@@ -2674,7 +2854,7 @@ class RenderedSST2TestCase(datasets_utils.ImageDatasetTestCase):
 
 class Kitti2012StereoTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Kitti2012Stereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
 
     def inject_fake_data(self, tmpdir, config):
@@ -2736,7 +2916,7 @@ class Kitti2012StereoTestCase(datasets_utils.ImageDatasetTestCase):
 
 class Kitti2015StereoTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.Kitti2015Stereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
 
     def inject_fake_data(self, tmpdir, config):
@@ -2841,9 +3021,40 @@ class CarlaStereoTestCase(datasets_utils.ImageDatasetTestCase):
                 datasets_utils.shape_test_for_stereo(left, right, disparity)
 
 
+class CREStereoTestCase(datasets_utils.ImageDatasetTestCase):
+    DATASET_CLASS = datasets.CREStereo
+    FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, np.ndarray, type(None))
+
+    def inject_fake_data(self, tmpdir, config):
+        crestereo_dir = pathlib.Path(tmpdir) / "CREStereo"
+        os.makedirs(crestereo_dir, exist_ok=True)
+
+        examples = {"tree": 2, "shapenet": 3, "reflective": 6, "hole": 5}
+
+        for category_name in ["shapenet", "reflective", "tree", "hole"]:
+            split_dir = crestereo_dir / category_name
+            os.makedirs(split_dir, exist_ok=True)
+            num_examples = examples[category_name]
+
+            for idx in range(num_examples):
+                datasets_utils.create_image_file(root=split_dir, name=f"{idx}_left.jpg", size=(100, 100))
+                datasets_utils.create_image_file(root=split_dir, name=f"{idx}_right.jpg", size=(100, 100))
+                # these are going to end up being gray scale images
+                datasets_utils.create_image_file(root=split_dir, name=f"{idx}_left.disp.png", size=(1, 100, 100))
+                datasets_utils.create_image_file(root=split_dir, name=f"{idx}_right.disp.png", size=(1, 100, 100))
+
+        return sum(examples.values())
+
+    def test_splits(self):
+        with self.create_dataset() as (dataset, _):
+            for left, right, disparity, mask in dataset:
+                assert mask is None
+                datasets_utils.shape_test_for_stereo(left, right, disparity)
+
+
 class FallingThingsStereoTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.FallingThingsStereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(variant=("single", "mixed", "both"))
+    ADDITIONAL_CONFIGS = combinations_grid(variant=("single", "mixed", "both"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
 
     @staticmethod
@@ -2917,7 +3128,7 @@ class FallingThingsStereoTestCase(datasets_utils.ImageDatasetTestCase):
 
 class SceneFlowStereoTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.SceneFlowStereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(
+    ADDITIONAL_CONFIGS = combinations_grid(
         variant=("FlyingThings3D", "Driving", "Monkaa"), pass_name=("clean", "final", "both")
     )
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
@@ -3004,7 +3215,7 @@ class SceneFlowStereoTestCase(datasets_utils.ImageDatasetTestCase):
 class InStereo2k(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.InStereo2k
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)))
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
 
     @staticmethod
     def _make_scene_folder(root: str, name: str, size: Tuple[int, int]):
@@ -3046,7 +3257,7 @@ class InStereo2k(datasets_utils.ImageDatasetTestCase):
 
 class SintelStereoTestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.SintelStereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(pass_name=("final", "clean", "both"))
+    ADDITIONAL_CONFIGS = combinations_grid(pass_name=("final", "clean", "both"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
 
     def inject_fake_data(self, tmpdir, config):
@@ -3122,7 +3333,7 @@ class SintelStereoTestCase(datasets_utils.ImageDatasetTestCase):
 
 class ETH3DStereoestCase(datasets_utils.ImageDatasetTestCase):
     DATASET_CLASS = datasets.ETH3DStereo
-    ADDITIONAL_CONFIGS = datasets_utils.combinations_grid(split=("train", "test"))
+    ADDITIONAL_CONFIGS = combinations_grid(split=("train", "test"))
     FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
 
     @staticmethod
@@ -3185,6 +3396,176 @@ class ETH3DStereoestCase(datasets_utils.ImageDatasetTestCase):
         with pytest.raises(ValueError, match="Unknown value 'bad' for argument split"):
             with self.create_dataset(split="bad"):
                 pass
+
+
+class Middlebury2014StereoTestCase(datasets_utils.ImageDatasetTestCase):
+    DATASET_CLASS = datasets.Middlebury2014Stereo
+    ADDITIONAL_CONFIGS = combinations_grid(
+        split=("train", "additional"),
+        calibration=("perfect", "imperfect", "both"),
+        use_ambient_views=(True, False),
+    )
+    FEATURE_TYPES = (PIL.Image.Image, PIL.Image.Image, (np.ndarray, type(None)), (np.ndarray, type(None)))
+
+    @staticmethod
+    def _make_scene_folder(root_dir: str, scene_name: str, split: str) -> None:
+        calibrations = [None] if split == "test" else ["-perfect", "-imperfect"]
+        root_dir = pathlib.Path(root_dir)
+
+        for c in calibrations:
+            scene_dir = root_dir / f"{scene_name}{c}"
+            os.makedirs(scene_dir, exist_ok=True)
+            # make normal images first
+            datasets_utils.create_image_file(root=scene_dir, name="im0.png", size=(3, 100, 100))
+            datasets_utils.create_image_file(root=scene_dir, name="im1.png", size=(3, 100, 100))
+            datasets_utils.create_image_file(root=scene_dir, name="im1E.png", size=(3, 100, 100))
+            datasets_utils.create_image_file(root=scene_dir, name="im1L.png", size=(3, 100, 100))
+            # these are going to end up being gray scale images
+            datasets_utils.make_fake_pfm_file(h=100, w=100, file_name=scene_dir / "disp0.pfm")
+            datasets_utils.make_fake_pfm_file(h=100, w=100, file_name=scene_dir / "disp1.pfm")
+
+    def inject_fake_data(self, tmpdir, config):
+        split_scene_map = {
+            "train": ["Adirondack", "Jadeplant", "Motorcycle", "Piano"],
+            "additional": ["Backpack", "Bicycle1", "Cable", "Classroom1"],
+            "test": ["Plants", "Classroom2E", "Classroom2", "Australia"],
+        }
+
+        middlebury_dir = pathlib.Path(tmpdir, "Middlebury2014")
+        os.makedirs(middlebury_dir, exist_ok=True)
+
+        split_dir = middlebury_dir / config["split"]
+        os.makedirs(split_dir, exist_ok=True)
+
+        num_examples = {"train": 2, "additional": 3, "test": 4}.get(config["split"], 0)
+        for idx in range(num_examples):
+            scene_name = split_scene_map[config["split"]][idx]
+            self._make_scene_folder(root_dir=split_dir, scene_name=scene_name, split=config["split"])
+
+        if config["calibration"] == "both":
+            num_examples *= 2
+        return num_examples
+
+    def test_train_splits(self):
+        for split, calibration in itertools.product(["train", "additional"], ["perfect", "imperfect", "both"]):
+            with self.create_dataset(split=split, calibration=calibration) as (dataset, _):
+                for left, right, disparity, mask in dataset:
+                    datasets_utils.shape_test_for_stereo(left, right, disparity, mask)
+
+    def test_test_split(self):
+        for split in ["test"]:
+            with self.create_dataset(split=split, calibration=None) as (dataset, _):
+                for left, right, disparity, mask in dataset:
+                    datasets_utils.shape_test_for_stereo(left, right)
+
+    def test_augmented_view_usage(self):
+        with self.create_dataset(split="train", use_ambient_views=True) as (dataset, _):
+            for left, right, disparity, mask in dataset:
+                datasets_utils.shape_test_for_stereo(left, right, disparity, mask)
+
+    def test_value_err_train(self):
+        # train set invalid
+        split = "train"
+        calibration = None
+        with pytest.raises(
+            ValueError,
+            match=f"Split '{split}' has calibration settings, however None was provided as an argument."
+            f"\nSetting calibration to 'perfect' for split '{split}'. Available calibration settings are: 'perfect', 'imperfect', 'both'.",
+        ):
+            with self.create_dataset(split=split, calibration=calibration):
+                pass
+
+    def test_value_err_test(self):
+        # test set invalid
+        split = "test"
+        calibration = "perfect"
+        with pytest.raises(
+            ValueError, match="Split 'test' has only no calibration settings, please set `calibration=None`."
+        ):
+            with self.create_dataset(split=split, calibration=calibration):
+                pass
+
+    def test_bad_input(self):
+        with pytest.raises(ValueError, match="Unknown value 'bad' for argument split"):
+            with self.create_dataset(split="bad"):
+                pass
+
+
+class ImagenetteTestCase(datasets_utils.ImageDatasetTestCase):
+    DATASET_CLASS = datasets.Imagenette
+    ADDITIONAL_CONFIGS = combinations_grid(split=["train", "val"], size=["full", "320px", "160px"])
+
+    _WNIDS = [
+        "n01440764",
+        "n02102040",
+        "n02979186",
+        "n03000684",
+        "n03028079",
+        "n03394916",
+        "n03417042",
+        "n03425413",
+        "n03445777",
+        "n03888257",
+    ]
+
+    def inject_fake_data(self, tmpdir, config):
+        archive_root = "imagenette2"
+        if config["size"] != "full":
+            archive_root += f"-{config['size'].replace('px', '')}"
+        image_root = pathlib.Path(tmpdir) / archive_root / config["split"]
+
+        num_images_per_class = 3
+        for wnid in self._WNIDS:
+            datasets_utils.create_image_folder(
+                root=image_root,
+                name=wnid,
+                file_name_fn=lambda idx: f"{wnid}_{idx}.JPEG",
+                num_examples=num_images_per_class,
+            )
+
+        return num_images_per_class * len(self._WNIDS)
+
+
+class TestDatasetWrapper:
+    def test_unknown_type(self):
+        unknown_object = object()
+        with pytest.raises(
+            TypeError, match=re.escape("is meant for subclasses of `torchvision.datasets.VisionDataset`")
+        ):
+            datasets.wrap_dataset_for_transforms_v2(unknown_object)
+
+    def test_unknown_dataset(self):
+        class MyVisionDataset(datasets.VisionDataset):
+            pass
+
+        dataset = MyVisionDataset("root")
+
+        with pytest.raises(TypeError, match="No wrapper exist"):
+            datasets.wrap_dataset_for_transforms_v2(dataset)
+
+    def test_missing_wrapper(self):
+        dataset = datasets.FakeData()
+
+        with pytest.raises(TypeError, match="please open an issue"):
+            datasets.wrap_dataset_for_transforms_v2(dataset)
+
+    def test_subclass(self, mocker):
+        from torchvision import tv_tensors
+
+        sentinel = object()
+        mocker.patch.dict(
+            tv_tensors._dataset_wrapper.WRAPPER_FACTORIES,
+            clear=False,
+            values={datasets.FakeData: lambda dataset, target_keys: lambda idx, sample: sentinel},
+        )
+
+        class MyFakeData(datasets.FakeData):
+            pass
+
+        dataset = MyFakeData()
+        wrapped_dataset = datasets.wrap_dataset_for_transforms_v2(dataset)
+
+        assert wrapped_dataset[0] is sentinel
 
 
 if __name__ == "__main__":

@@ -1,12 +1,15 @@
+import copy
 import os
+import pickle
 
 import pytest
 import test_models as TM
 import torch
+from common_extended_utils import get_file_size_mb, get_ops
 from torchvision import models
-from torchvision.models._api import get_model_weights, Weights, WeightsEnum
+from torchvision.models import get_model_weights, Weights, WeightsEnum
 from torchvision.models._utils import handle_legacy_interface
-
+from torchvision.models.detection.backbone_utils import mobilenet_backbone, resnet_fpn_backbone
 
 run_if_test_with_extended = pytest.mark.skipif(
     os.getenv("PYTORCH_TEST_WITH_EXTENDED", "0") != "1",
@@ -30,6 +33,21 @@ def test_get_model(name, model_class):
 
 
 @pytest.mark.parametrize(
+    "name, model_fn",
+    [
+        ("resnet50", models.resnet50),
+        ("retinanet_resnet50_fpn_v2", models.detection.retinanet_resnet50_fpn_v2),
+        ("raft_large", models.optical_flow.raft_large),
+        ("quantized_resnet50", models.quantization.resnet50),
+        ("lraspp_mobilenet_v3_large", models.segmentation.lraspp_mobilenet_v3_large),
+        ("mvit_v1_b", models.video.mvit_v1_b),
+    ],
+)
+def test_get_model_builder(name, model_fn):
+    assert models.get_model_builder(name) == model_fn
+
+
+@pytest.mark.parametrize(
     "name, weight",
     [
         ("resnet50", models.ResNet50_Weights),
@@ -44,22 +62,123 @@ def test_get_model_weights(name, weight):
     assert models.get_model_weights(name) == weight
 
 
+@pytest.mark.parametrize("copy_fn", [copy.copy, copy.deepcopy])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "resnet50",
+        "retinanet_resnet50_fpn_v2",
+        "raft_large",
+        "quantized_resnet50",
+        "lraspp_mobilenet_v3_large",
+        "mvit_v1_b",
+    ],
+)
+def test_weights_copyable(copy_fn, name):
+    for weights in list(models.get_model_weights(name)):
+        # It is somewhat surprising that (deep-)copying is an identity operation here, but this is the default behavior
+        # of enums: https://docs.python.org/3/howto/enum.html#enum-members-aka-instances
+        # Checking for equality, i.e. `==`, is sufficient (and even preferable) for our use case, should we need to drop
+        # support for the identity operation in the future.
+        assert copy_fn(weights) is weights
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "resnet50",
+        "retinanet_resnet50_fpn_v2",
+        "raft_large",
+        "quantized_resnet50",
+        "lraspp_mobilenet_v3_large",
+        "mvit_v1_b",
+    ],
+)
+def test_weights_deserializable(name):
+    for weights in list(models.get_model_weights(name)):
+        # It is somewhat surprising that deserialization is an identity operation here, but this is the default behavior
+        # of enums: https://docs.python.org/3/howto/enum.html#enum-members-aka-instances
+        # Checking for equality, i.e. `==`, is sufficient (and even preferable) for our use case, should we need to drop
+        # support for the identity operation in the future.
+        assert pickle.loads(pickle.dumps(weights)) is weights
+
+
+def get_models_from_module(module):
+    return [
+        v.__name__
+        for k, v in module.__dict__.items()
+        if callable(v) and k[0].islower() and k[0] != "_" and k not in models._api.__all__
+    ]
+
+
 @pytest.mark.parametrize(
     "module", [models, models.detection, models.quantization, models.segmentation, models.video, models.optical_flow]
 )
 def test_list_models(module):
-    def get_models_from_module(module):
-        return [
-            v.__name__
-            for k, v in module.__dict__.items()
-            if callable(v) and k[0].islower() and k[0] != "_" and k not in models._api.__all__
-        ]
-
     a = set(get_models_from_module(module))
     b = set(x.replace("quantized_", "") for x in models.list_models(module))
 
     assert len(b) > 0
     assert a == b
+
+
+@pytest.mark.parametrize(
+    "include_filters",
+    [
+        None,
+        [],
+        (),
+        "",
+        "*resnet*",
+        ["*alexnet*"],
+        "*not-existing-model-for-test?",
+        ["*resnet*", "*alexnet*"],
+        ["*resnet*", "*alexnet*", "*not-existing-model-for-test?"],
+        ("*resnet*", "*alexnet*"),
+        set(["*resnet*", "*alexnet*"]),
+    ],
+)
+@pytest.mark.parametrize(
+    "exclude_filters",
+    [
+        None,
+        [],
+        (),
+        "",
+        "*resnet*",
+        ["*alexnet*"],
+        ["*not-existing-model-for-test?"],
+        ["resnet34", "*not-existing-model-for-test?"],
+        ["resnet34", "*resnet1*"],
+        ("resnet34", "*resnet1*"),
+        set(["resnet34", "*resnet1*"]),
+    ],
+)
+def test_list_models_filters(include_filters, exclude_filters):
+    actual = set(models.list_models(models, include=include_filters, exclude=exclude_filters))
+    classification_models = set(get_models_from_module(models))
+
+    if isinstance(include_filters, str):
+        include_filters = [include_filters]
+    if isinstance(exclude_filters, str):
+        exclude_filters = [exclude_filters]
+
+    if include_filters:
+        expected = set()
+        for include_f in include_filters:
+            include_f = include_f.strip("*?")
+            expected = expected | set(x for x in classification_models if include_f in x)
+    else:
+        expected = classification_models
+
+    if exclude_filters:
+        for exclude_f in exclude_filters:
+            exclude_f = exclude_f.strip("*?")
+            if exclude_f != "":
+                a_exclude = set(x for x in classification_models if exclude_f in x)
+                expected = expected - a_exclude
+
+    assert expected == actual
 
 
 @pytest.mark.parametrize(
@@ -96,6 +215,22 @@ def test_naming_conventions(model_fn):
     assert len(weights_enum) == 0 or hasattr(weights_enum, "DEFAULT")
 
 
+detection_models_input_dims = {
+    "fasterrcnn_mobilenet_v3_large_320_fpn": (320, 320),
+    "fasterrcnn_mobilenet_v3_large_fpn": (800, 800),
+    "fasterrcnn_resnet50_fpn": (800, 800),
+    "fasterrcnn_resnet50_fpn_v2": (800, 800),
+    "fcos_resnet50_fpn": (800, 800),
+    "keypointrcnn_resnet50_fpn": (1333, 1333),
+    "maskrcnn_resnet50_fpn": (800, 800),
+    "maskrcnn_resnet50_fpn_v2": (800, 800),
+    "retinanet_resnet50_fpn": (800, 800),
+    "retinanet_resnet50_fpn_v2": (800, 800),
+    "ssd300_vgg16": (300, 300),
+    "ssdlite320_mobilenet_v3_large": (320, 320),
+}
+
+
 @pytest.mark.parametrize(
     "model_fn",
     TM.list_model_fns(models)
@@ -107,6 +242,9 @@ def test_naming_conventions(model_fn):
 )
 @run_if_test_with_extended
 def test_schema_meta_validation(model_fn):
+    if model_fn.__name__ == "maskrcnn_resnet50_fpn_v2":
+        pytest.skip(reason="FIXME https://github.com/pytorch/vision/issues/7349")
+
     # list of all possible supported high-level fields for weights meta-data
     permitted_fields = {
         "backend",
@@ -120,11 +258,13 @@ def test_schema_meta_validation(model_fn):
         "recipe",
         "unquantized",
         "_docs",
+        "_ops",
+        "_file_size",
     }
     # mandatory fields for each computer vision task
     classification_fields = {"categories", ("_metrics", "ImageNet-1K", "acc@1"), ("_metrics", "ImageNet-1K", "acc@5")}
     defaults = {
-        "all": {"_metrics", "min_size", "num_params", "recipe", "_docs"},
+        "all": {"_metrics", "min_size", "num_params", "recipe", "_docs", "_file_size", "_ops"},
         "models": classification_fields,
         "detection": {"categories", ("_metrics", "COCO-val2017", "box_map")},
         "quantization": classification_fields | {"backend", "unquantized"},
@@ -145,7 +285,7 @@ def test_schema_meta_validation(model_fn):
         pytest.skip(f"Model '{model_name}' doesn't have any pre-trained weights.")
 
     problematic_weights = {}
-    incorrect_params = []
+    incorrect_meta = []
     bad_names = []
     for w in weights_enum:
         actual_fields = set(w.meta.keys())
@@ -158,24 +298,47 @@ def test_schema_meta_validation(model_fn):
         unsupported_fields = set(w.meta.keys()) - permitted_fields
         if missing_fields or unsupported_fields:
             problematic_weights[w] = {"missing": missing_fields, "unsupported": unsupported_fields}
-        if w == weights_enum.DEFAULT:
+
+        if w == weights_enum.DEFAULT or any(w.meta[k] != weights_enum.DEFAULT.meta[k] for k in ["num_params", "_ops"]):
             if module_name == "quantization":
                 # parameters() count doesn't work well with quantization, so we check against the non-quantized
                 unquantized_w = w.meta.get("unquantized")
-                if unquantized_w is not None and w.meta.get("num_params") != unquantized_w.meta.get("num_params"):
-                    incorrect_params.append(w)
+                if unquantized_w is not None:
+                    if w.meta.get("num_params") != unquantized_w.meta.get("num_params"):
+                        incorrect_meta.append((w, "num_params"))
+
+                    # the methodology for quantized ops count doesn't work as well, so we take unquantized FLOPs
+                    # instead
+                    if w.meta["_ops"] != unquantized_w.meta.get("_ops"):
+                        incorrect_meta.append((w, "_ops"))
+
             else:
-                if w.meta.get("num_params") != sum(p.numel() for p in model_fn(weights=w).parameters()):
-                    incorrect_params.append(w)
-        else:
-            if w.meta.get("num_params") != weights_enum.DEFAULT.meta.get("num_params"):
-                if w.meta.get("num_params") != sum(p.numel() for p in model_fn(weights=w).parameters()):
-                    incorrect_params.append(w)
+                # loading the model and using it for parameter and ops verification
+                model = model_fn(weights=w)
+
+                if w.meta.get("num_params") != sum(p.numel() for p in model.parameters()):
+                    incorrect_meta.append((w, "num_params"))
+
+                kwargs = {}
+                if model_name in detection_models_input_dims:
+                    # detection models have non default height and width
+                    height, width = detection_models_input_dims[model_name]
+                    kwargs = {"height": height, "width": width}
+
+                if not model_fn.__name__.startswith("vit"):
+                    # FIXME: https://github.com/pytorch/vision/issues/7871
+                    calculated_ops = get_ops(model=model, weight=w, **kwargs)
+                    if calculated_ops != w.meta["_ops"]:
+                        incorrect_meta.append((w, "_ops"))
+
         if not w.name.isupper():
             bad_names.append(w)
 
+        if get_file_size_mb(w) != w.meta.get("_file_size"):
+            incorrect_meta.append((w, "_file_size"))
+
     assert not problematic_weights
-    assert not incorrect_params
+    assert not incorrect_meta
     assert not bad_names
 
 
@@ -320,3 +483,21 @@ class TestHandleLegacyInterface:
 
         with pytest.raises(ValueError, match="weights"):
             builder(pretrained=True, flag=False)
+
+    @pytest.mark.parametrize(
+        "model_fn",
+        [fn for fn in TM.list_model_fns(models) if fn.__name__ not in {"vit_h_14", "regnet_y_128gf"}]
+        + TM.list_model_fns(models.detection)
+        + TM.list_model_fns(models.quantization)
+        + TM.list_model_fns(models.segmentation)
+        + TM.list_model_fns(models.video)
+        + TM.list_model_fns(models.optical_flow)
+        + [
+            lambda pretrained: resnet_fpn_backbone(backbone_name="resnet50", pretrained=pretrained),
+            lambda pretrained: mobilenet_backbone(backbone_name="mobilenet_v2", fpn=False, pretrained=pretrained),
+        ],
+    )
+    @run_if_test_with_extended
+    def test_pretrained_deprecation(self, model_fn):
+        with pytest.warns(UserWarning, match="deprecated"):
+            model_fn(pretrained=True)

@@ -1,6 +1,7 @@
 import os
 from os import path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin
 
 from .folder import default_loader
@@ -12,14 +13,14 @@ class Places365(VisionDataset):
     r"""`Places365 <http://places2.csail.mit.edu/index.html>`_ classification dataset.
 
     Args:
-        root (string): Root directory of the Places365 dataset.
+        root (str or ``pathlib.Path``): Root directory of the Places365 dataset.
         split (string, optional): The dataset split. Can be one of ``train-standard`` (default), ``train-challenge``,
             ``val``.
-        small (bool, optional): If ``True``, uses the small images, i. e. resized to 256 x 256 pixels, instead of the
+        small (bool, optional): If ``True``, uses the small images, i.e. resized to 256 x 256 pixels, instead of the
             high resolution ones.
         download (bool, optional): If ``True``, downloads the dataset components and places them in ``root``. Already
             downloaded archives are not downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -32,7 +33,7 @@ class Places365(VisionDataset):
         targets (list): The class_index value for each image in the dataset
 
     Raises:
-        RuntimeError: If ``download is False`` and the meta files, i. e. the devkit, are not present or corrupted.
+        RuntimeError: If ``download is False`` and the meta files, i.e. the devkit, are not present or corrupted.
         RuntimeError: If ``download is True`` and the image archive is already extracted.
     """
     _SPLITS = ("train-standard", "train-challenge", "val")
@@ -62,7 +63,7 @@ class Places365(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         split: str = "train-standard",
         small: bool = False,
         download: bool = False,
@@ -144,10 +145,7 @@ class Places365(VisionDataset):
 
     def download_images(self) -> None:
         if path.exists(self.images_dir):
-            raise RuntimeError(
-                f"The directory {self.images_dir} already exists. If you want to re-download or re-extract the images, "
-                f"delete the directory."
-            )
+            return
 
         file, md5 = self._IMAGES_META[(self.split, self.small)]
         download_and_extract_archive(urljoin(self._BASE_URL, file), self.root, md5=md5)

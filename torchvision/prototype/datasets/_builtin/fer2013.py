@@ -5,7 +5,8 @@ import torch
 from torchdata.datapipes.iter import CSVDictParser, IterDataPipe, Mapper
 from torchvision.prototype.datasets.utils import Dataset, KaggleDownloadResource, OnlineResource
 from torchvision.prototype.datasets.utils._internal import hint_sharding, hint_shuffling
-from torchvision.prototype.features import Image, Label
+from torchvision.prototype.tv_tensors import Label
+from torchvision.tv_tensors import Image
 
 from .._api import register_dataset, register_info
 

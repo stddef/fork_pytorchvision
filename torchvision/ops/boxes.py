@@ -6,7 +6,16 @@ from torch import Tensor
 from torchvision.extension import _assert_has_ops
 
 from ..utils import _log_api_usage_once
-from ._box_convert import _box_cxcywh_to_xyxy, _box_xywh_to_xyxy, _box_xyxy_to_cxcywh, _box_xyxy_to_xywh
+from ._box_convert import (
+    _box_cxcywh_to_xyxy,
+    _box_cxcywhr_to_xywhr,
+    _box_xywh_to_xyxy,
+    _box_xywhr_to_cxcywhr,
+    _box_xywhr_to_xyxyxyxy,
+    _box_xyxy_to_cxcywh,
+    _box_xyxy_to_xywh,
+    _box_xyxyxyxy_to_xywhr,
+)
 from ._utils import _upcast
 
 
@@ -16,7 +25,7 @@ def nms(boxes: Tensor, scores: Tensor, iou_threshold: float) -> Tensor:
     to their intersection-over-union (IoU).
 
     NMS iteratively removes lower scoring boxes which have an
-    IoU greater than iou_threshold with another (higher scoring)
+    IoU greater than ``iou_threshold`` with another (higher scoring)
     box.
 
     If multiple boxes have the exact same score and satisfy the IoU
@@ -114,7 +123,12 @@ def _batched_nms_vanilla(
 
 def remove_small_boxes(boxes: Tensor, min_size: float) -> Tensor:
     """
-    Remove boxes which contains at least one side smaller than min_size.
+    Remove every box from ``boxes`` which contains at least one side length
+    that is smaller than ``min_size``.
+
+    .. note::
+        For sanitizing a :class:`~torchvision.tv_tensors.BoundingBoxes` object, consider using
+        the transform :func:`~torchvision.transforms.v2.SanitizeBoundingBoxes` instead.
 
     Args:
         boxes (Tensor[N, 4]): boxes in ``(x1, y1, x2, y2)`` format
@@ -123,7 +137,7 @@ def remove_small_boxes(boxes: Tensor, min_size: float) -> Tensor:
 
     Returns:
         Tensor[K]: indices of the boxes that have both sides
-        larger than min_size
+        larger than ``min_size``
     """
     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
         _log_api_usage_once(remove_small_boxes)
@@ -135,7 +149,11 @@ def remove_small_boxes(boxes: Tensor, min_size: float) -> Tensor:
 
 def clip_boxes_to_image(boxes: Tensor, size: Tuple[int, int]) -> Tensor:
     """
-    Clip boxes so that they lie inside an image of size `size`.
+    Clip boxes so that they lie inside an image of size ``size``.
+
+    .. note::
+        For clipping a :class:`~torchvision.tv_tensors.BoundingBoxes` object, consider using
+        the transform :func:`~torchvision.transforms.v2.ClampBoundingBoxes` instead.
 
     Args:
         boxes (Tensor[N, 4]): boxes in ``(x1, y1, x2, y2)`` format
@@ -167,52 +185,89 @@ def clip_boxes_to_image(boxes: Tensor, size: Tuple[int, int]) -> Tensor:
 
 def box_convert(boxes: Tensor, in_fmt: str, out_fmt: str) -> Tensor:
     """
-    Converts boxes from given in_fmt to out_fmt.
-    Supported in_fmt and out_fmt are:
+    Converts :class:`torch.Tensor` boxes from a given ``in_fmt`` to ``out_fmt``.
 
-    'xyxy': boxes are represented via corners, x1, y1 being top left and x2, y2 being bottom right.
+    .. note::
+        For converting a :class:`torch.Tensor` or a :class:`~torchvision.tv_tensors.BoundingBoxes` object
+        between different formats,
+        consider using :func:`~torchvision.transforms.v2.functional.convert_bounding_box_format` instead.
+        Or see the corresponding transform :func:`~torchvision.transforms.v2.ConvertBoundingBoxFormat`.
+
+    Supported ``in_fmt`` and ``out_fmt`` strings are:
+
+    ``'xyxy'``: boxes are represented via corners, x1, y1 being top left and x2, y2 being bottom right.
     This is the format that torchvision utilities expect.
 
-    'xywh' : boxes are represented via corner, width and height, x1, y2 being top left, w, h being width and height.
+    ``'xywh'``: boxes are represented via corner, width and height, x1, y2 being top left, w, h being width and height.
 
-    'cxcywh' : boxes are represented via centre, width and height, cx, cy being center of box, w, h
+    ``'cxcywh'``: boxes are represented via centre, width and height, cx, cy being center of box, w, h
     being width and height.
 
+    ``'xywhr'``: boxes are represented via corner, width and height, x1, y2 being top left, w, h being width and height.
+    r is rotation angle w.r.t to the box center by :math:`|r|` degrees counter clock wise in the image plan
+
+    ``'cxcywhr'``: boxes are represented via centre, width and height, cx, cy being center of box, w, h
+    being width and height.
+    r is rotation angle w.r.t to the box center by :math:`|r|` degrees counter clock wise in the image plan
+
+    ``'xyxyxyxy'``: boxes are represented via corners, x1, y1 being top left, x2, y2 bottom right,
+    x3, y3 bottom left, and x4, y4 top right.
+
     Args:
-        boxes (Tensor[N, 4]): boxes which will be converted.
-        in_fmt (str): Input format of given boxes. Supported formats are ['xyxy', 'xywh', 'cxcywh'].
-        out_fmt (str): Output format of given boxes. Supported formats are ['xyxy', 'xywh', 'cxcywh']
+        boxes (Tensor[N, K]): boxes which will be converted. K is the number of coordinates (4 for unrotated bounding boxes, 5 or 8 for rotated bounding boxes)
+        in_fmt (str): Input format of given boxes. Supported formats are ['xyxy', 'xywh', 'cxcywh', 'xywhr', 'cxcywhr', 'xyxyxyxy'].
+        out_fmt (str): Output format of given boxes. Supported formats are ['xyxy', 'xywh', 'cxcywh', 'xywhr', 'cxcywhr', 'xyxyxyxy']
 
     Returns:
-        Tensor[N, 4]: Boxes into converted format.
+        Tensor[N, K]: Boxes into converted format.
     """
     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
         _log_api_usage_once(box_convert)
-    allowed_fmts = ("xyxy", "xywh", "cxcywh")
+    allowed_fmts = (
+        "xyxy",
+        "xywh",
+        "cxcywh",
+        "xywhr",
+        "cxcywhr",
+        "xyxyxyxy",
+    )
     if in_fmt not in allowed_fmts or out_fmt not in allowed_fmts:
-        raise ValueError("Unsupported Bounding Box Conversions for given in_fmt and out_fmt")
+        raise ValueError(f"Unsupported Bounding Box Conversions for given in_fmt {in_fmt} and out_fmt {out_fmt}")
 
     if in_fmt == out_fmt:
         return boxes.clone()
+    e = (in_fmt, out_fmt)
+    if e == ("xywh", "xyxy"):
+        boxes = _box_xywh_to_xyxy(boxes)
+    elif e == ("cxcywh", "xyxy"):
+        boxes = _box_cxcywh_to_xyxy(boxes)
+    elif e == ("xyxy", "xywh"):
+        boxes = _box_xyxy_to_xywh(boxes)
+    elif e == ("xyxy", "cxcywh"):
+        boxes = _box_xyxy_to_cxcywh(boxes)
+    elif e == ("xywh", "cxcywh"):
+        boxes = _box_xywh_to_xyxy(boxes)
+        boxes = _box_xyxy_to_cxcywh(boxes)
+    elif e == ("cxcywh", "xywh"):
+        boxes = _box_cxcywh_to_xyxy(boxes)
+        boxes = _box_xyxy_to_xywh(boxes)
+    elif e == ("cxcywhr", "xywhr"):
+        boxes = _box_cxcywhr_to_xywhr(boxes)
+    elif e == ("xywhr", "cxcywhr"):
+        boxes = _box_xywhr_to_cxcywhr(boxes)
+    elif e == ("cxcywhr", "xyxyxyxy"):
+        boxes = _box_cxcywhr_to_xywhr(boxes).to(boxes.dtype)
+        boxes = _box_xywhr_to_xyxyxyxy(boxes)
+    elif e == ("xyxyxyxy", "cxcywhr"):
+        boxes = _box_xyxyxyxy_to_xywhr(boxes).to(boxes.dtype)
+        boxes = _box_xywhr_to_cxcywhr(boxes)
+    elif e == ("xywhr", "xyxyxyxy"):
+        boxes = _box_xywhr_to_xyxyxyxy(boxes)
+    elif e == ("xyxyxyxy", "xywhr"):
+        boxes = _box_xyxyxyxy_to_xywhr(boxes)
+    else:
+        raise NotImplementedError(f"Unsupported Bounding Box Conversions for given in_fmt {e[0]} and out_fmt {e[1]}")
 
-    if in_fmt != "xyxy" and out_fmt != "xyxy":
-        # convert to xyxy and change in_fmt xyxy
-        if in_fmt == "xywh":
-            boxes = _box_xywh_to_xyxy(boxes)
-        elif in_fmt == "cxcywh":
-            boxes = _box_cxcywh_to_xyxy(boxes)
-        in_fmt = "xyxy"
-
-    if in_fmt == "xyxy":
-        if out_fmt == "xywh":
-            boxes = _box_xyxy_to_xywh(boxes)
-        elif out_fmt == "cxcywh":
-            boxes = _box_xyxy_to_cxcywh(boxes)
-    elif out_fmt == "xyxy":
-        if in_fmt == "xywh":
-            boxes = _box_xywh_to_xyxy(boxes)
-        elif in_fmt == "cxcywh":
-            boxes = _box_cxcywh_to_xyxy(boxes)
     return boxes
 
 
@@ -388,7 +443,13 @@ def masks_to_boxes(masks: torch.Tensor) -> torch.Tensor:
     Compute the bounding boxes around the provided masks.
 
     Returns a [N, 4] tensor containing bounding boxes. The boxes are in ``(x1, y1, x2, y2)`` format with
-    ``0 <= x1 < x2`` and ``0 <= y1 < y2``.
+    ``0 <= x1 <= x2`` and ``0 <= y1 <= y2``.
+
+    .. warning::
+
+        In most cases the output will guarantee ``x1 < x2`` and ``y1 < y2``. But
+        if the input is degenerate, e.g. if a mask is a single row or a single
+        column, then the output may have x1 = x2 or y1 = y2.
 
     Args:
         masks (Tensor[N, H, W]): masks to transform where N is the number of masks

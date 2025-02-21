@@ -15,7 +15,6 @@ from ._api import register_model, Weights, WeightsEnum
 from ._meta import _IMAGENET_CATEGORIES
 from ._utils import _ovewrite_named_param, handle_legacy_interface
 
-
 __all__ = [
     "DenseNet",
     "DenseNet121_Weights",
@@ -62,7 +61,7 @@ class _DenseLayer(nn.Module):
         def closure(*inputs):
             return self.bn_function(inputs)
 
-        return cp.checkpoint(closure, *input)
+        return cp.checkpoint(closure, *input, use_reentrant=False)
 
     @torch.jit._overload_method  # noqa: F811
     def forward(self, input: List[Tensor]) -> Tensor:  # noqa: F811
@@ -228,7 +227,7 @@ def _load_state_dict(model: nn.Module, weights: WeightsEnum, progress: bool) -> 
         r"^(.*denselayer\d+\.(?:norm|relu|conv))\.((?:[12])\.(?:weight|bias|running_mean|running_var))$"
     )
 
-    state_dict = weights.get_state_dict(progress=progress)
+    state_dict = weights.get_state_dict(progress=progress, check_hash=True)
     for key in list(state_dict.keys()):
         res = pattern.match(key)
         if res:
@@ -278,6 +277,8 @@ class DenseNet121_Weights(WeightsEnum):
                     "acc@5": 91.972,
                 }
             },
+            "_ops": 2.834,
+            "_file_size": 30.845,
         },
     )
     DEFAULT = IMAGENET1K_V1
@@ -296,6 +297,8 @@ class DenseNet161_Weights(WeightsEnum):
                     "acc@5": 93.560,
                 }
             },
+            "_ops": 7.728,
+            "_file_size": 110.369,
         },
     )
     DEFAULT = IMAGENET1K_V1
@@ -314,6 +317,8 @@ class DenseNet169_Weights(WeightsEnum):
                     "acc@5": 92.806,
                 }
             },
+            "_ops": 3.36,
+            "_file_size": 54.708,
         },
     )
     DEFAULT = IMAGENET1K_V1
@@ -332,6 +337,8 @@ class DenseNet201_Weights(WeightsEnum):
                     "acc@5": 93.370,
                 }
             },
+            "_ops": 4.291,
+            "_file_size": 77.373,
         },
     )
     DEFAULT = IMAGENET1K_V1
@@ -439,17 +446,3 @@ def densenet201(*, weights: Optional[DenseNet201_Weights] = None, progress: bool
     weights = DenseNet201_Weights.verify(weights)
 
     return _densenet(32, (6, 12, 48, 32), 64, weights, progress, **kwargs)
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from ._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "densenet121": DenseNet121_Weights.IMAGENET1K_V1.url,
-        "densenet169": DenseNet169_Weights.IMAGENET1K_V1.url,
-        "densenet201": DenseNet201_Weights.IMAGENET1K_V1.url,
-        "densenet161": DenseNet161_Weights.IMAGENET1K_V1.url,
-    }
-)

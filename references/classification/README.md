@@ -120,7 +120,7 @@ Here `$MODEL` is one of `efficientnet_v2_s` and `efficientnet_v2_m`.
 Note that the Small variant had a `$TRAIN_SIZE` of `300` and a `$EVAL_SIZE` of `384`, while the Medium `384` and `480` respectively.
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 4 nodes, each with 8 GPUs (for a total of 32 GPUs),
+For generating the pre-trained weights, we trained with 4 nodes, each with 8 GPUs (for a total of 32 GPUs),
 and `--batch_size 32`.
 
 The weights of the Large variant are ported from the original paper rather than trained from scratch. See the `EfficientNet_V2_L_Weights` entry for their exact preprocessing transforms.
@@ -135,7 +135,7 @@ torchrun --nproc_per_node=8 train.py\
      --lr-scheduler=cosineannealinglr --lr-warmup-method=linear\
      --lr-warmup-epochs=5 --lr-warmup-decay=0.1
 ```
-Here `$MODEL` is one of `regnet_x_400mf`, `regnet_x_800mf`, `regnet_x_1_6gf`, `regnet_y_400mf`, `regnet_y_800mf` and `regnet_y_1_6gf`. Please note we used learning rate 0.4 for `regent_y_400mf` to get the same Acc@1 as [the paper)(https://arxiv.org/abs/2003.13678).
+Here `$MODEL` is one of `regnet_x_400mf`, `regnet_x_800mf`, `regnet_x_1_6gf`, `regnet_y_400mf`, `regnet_y_800mf` and `regnet_y_1_6gf`. Please note we used learning rate 0.4 for `regent_y_400mf` to get the same Acc@1 as [the paper](https://arxiv.org/abs/2003.13678).
 
 #### Medium models
 ```
@@ -167,7 +167,7 @@ torchrun --nproc_per_node=8 train.py\
 ```
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 8 nodes, each with 8 GPUs (for a total of 64 GPUs),
+For generating the pre-trained weights, we trained with 8 nodes, each with 8 GPUs (for a total of 64 GPUs),
 and `--batch_size 64`.
 
 #### vit_b_32
@@ -180,7 +180,7 @@ torchrun --nproc_per_node=8 train.py\
 ```
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
+For generating the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
 and `--batch_size 256`.
 
 #### vit_l_16
@@ -193,7 +193,7 @@ torchrun --nproc_per_node=8 train.py\
 ```
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
+For generating the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
 and `--batch_size 64`.
 
 #### vit_l_32
@@ -206,7 +206,7 @@ torchrun --nproc_per_node=8 train.py\
 ```
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 8 nodes, each with 8 GPUs (for a total of 64 GPUs),
+For generating the pre-trained weights, we trained with 8 nodes, each with 8 GPUs (for a total of 64 GPUs),
 and `--batch_size 64`.
 
 
@@ -221,7 +221,7 @@ torchrun --nproc_per_node=8 train.py\
 Here `$MODEL` is one of `convnext_tiny`, `convnext_small`, `convnext_base` and `convnext_large`. Note that each variant had its `--val-resize-size` optimized in a post-training step, see their `Weights` entry for their exact value.
 
 Note that the above command corresponds to training on a single node with 8 GPUs.
-For generatring the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
+For generating the pre-trained weights, we trained with 2 nodes, each with 8 GPUs (for a total of 16 GPUs),
 and `--batch_size 64`.
 
 
@@ -245,6 +245,14 @@ Here `$MODEL` is one of `swin_v2_t`, `swin_v2_s` or `swin_v2_b`.
 Note that `--val-resize-size` was optimized in a post-training step, see their `Weights` entry for the exact value.
 
 
+### MaxViT
+```
+torchrun --nproc_per_node=8 --n_nodes=4 train.py\
+--model $MODEL --epochs 400 --batch-size 128 --opt adamw --lr 3e-3 --weight-decay 0.05 --lr-scheduler cosineannealinglr --lr-min 1e-5 --lr-warmup-method linear  --lr-warmup-epochs 32  --label-smoothing 0.1 --mixup-alpha 0.8 --clip-grad-norm 1.0 --interpolation bicubic --auto-augment ta_wide --policy-magnitude 15 --model-ema --val-resize-size 224\
+--val-crop-size 224 --train-crop-size 224 --amp  --model-ema-steps 32 --transformer-embedding-decay 0 --sync-bn
+```
+Here `$MODEL` is `maxvit_t`.
+Note that `--val-resize-size` was not optimized in a post-training step.
 
 
 ### ShuffleNet V2
@@ -281,24 +289,24 @@ For all post training quantized models, the settings are:
 2. num_workers: 16
 3. batch_size: 32
 4. eval_batch_size: 128
-5. backend: 'fbgemm'
+5. qbackend: 'fbgemm'
 
 ```
-python train_quantization.py --device='cpu' --post-training-quantize --backend='fbgemm' --model='$MODEL'
+python train_quantization.py --device='cpu' --post-training-quantize --qbackend='fbgemm' --model='$MODEL'
 ```
 Here `$MODEL` is one of `googlenet`, `inception_v3`, `resnet18`, `resnet50`, `resnext101_32x8d`, `shufflenet_v2_x0_5` and `shufflenet_v2_x1_0`.
 
 ### Quantized ShuffleNet V2
 
-Here are commands that we use to quantized the `shufflenet_v2_x1_5` and `shufflenet_v2_x2_0` models.
+Here are commands that we use to quantize the `shufflenet_v2_x1_5` and `shufflenet_v2_x2_0` models.
 ```
 # For shufflenet_v2_x1_5
-python train_quantization.py --device='cpu' --post-training-quantize --backend='fbgemm' \
+python train_quantization.py --device='cpu' --post-training-quantize --qbackend='fbgemm' \
     --model=shufflenet_v2_x1_5 --weights="ShuffleNet_V2_X1_5_Weights.IMAGENET1K_V1" \
     --train-crop-size 176 --val-resize-size 232 --data-path /datasets01_ontap/imagenet_full_size/061417/
 
 # For shufflenet_v2_x2_0
-python train_quantization.py --device='cpu' --post-training-quantize --backend='fbgemm' \
+python train_quantization.py --device='cpu' --post-training-quantize --qbackend='fbgemm' \
     --model=shufflenet_v2_x2_0 --weights="ShuffleNet_V2_X2_0_Weights.IMAGENET1K_V1" \
     --train-crop-size 176 --val-resize-size 232 --data-path /datasets01_ontap/imagenet_full_size/061417/
 ```
@@ -309,7 +317,7 @@ For Mobilenet-v2, the model was trained with quantization aware training, the se
 1. num_workers: 16
 2. batch_size: 32
 3. eval_batch_size: 128
-4. backend: 'qnnpack'
+4. qbackend: 'qnnpack'
 5. learning-rate: 0.0001
 6. num_epochs: 90
 7. num_observer_update_epochs:4
@@ -331,7 +339,7 @@ For Mobilenet-v3 Large, the model was trained with quantization aware training, 
 1. num_workers: 16
 2. batch_size: 32
 3. eval_batch_size: 128
-4. backend: 'qnnpack'
+4. qbackend: 'qnnpack'
 5. learning-rate: 0.001
 6. num_epochs: 90
 7. num_observer_update_epochs:4
@@ -351,7 +359,7 @@ For post training quant, device is set to CPU. For training, the device is set t
 ### Command to evaluate quantized models using the pre-trained weights:
 
 ```
-python train_quantization.py --device='cpu' --test-only --backend='<backend>' --model='<model_name>'
+python train_quantization.py --device='cpu' --test-only --qbackend='<qbackend>' --model='<model_name>'
 ```
 
 For inception_v3 you need to pass the following extra parameters:

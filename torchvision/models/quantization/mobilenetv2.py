@@ -80,6 +80,8 @@ class MobileNet_V2_QuantizedWeights(WeightsEnum):
                     "acc@5": 90.150,
                 }
             },
+            "_ops": 0.301,
+            "_file_size": 3.423,
             "_docs": """
                 These weights were produced by doing Quantization Aware Training (eager mode) on top of the unquantized
                 weights listed below.
@@ -147,18 +149,6 @@ def mobilenet_v2(
         quantize_model(model, backend)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-from ..mobilenetv2 import model_urls  # noqa: F401
-
-
-quant_model_urls = _ModelURLs(
-    {
-        "mobilenet_v2_qnnpack": MobileNet_V2_QuantizedWeights.IMAGENET1K_QNNPACK_V1.url,
-    }
-)

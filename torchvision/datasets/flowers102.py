@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, Union
 
 import PIL.Image
 
@@ -22,9 +22,9 @@ class Flowers102(VisionDataset):
     have large variations within the category, and several very similar categories.
 
     Args:
-        root (string): Root directory of the dataset.
+        root (str or ``pathlib.Path``): Root directory of the dataset.
         split (string, optional): The dataset split, supports ``"train"`` (default), ``"val"``, or ``"test"``.
-        transform (callable, optional): A function/transform that takes in an PIL image and returns a
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a
             transformed version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If true, downloads the dataset from the internet and
@@ -42,7 +42,7 @@ class Flowers102(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         split: str = "train",
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
@@ -76,7 +76,7 @@ class Flowers102(VisionDataset):
     def __len__(self) -> int:
         return len(self._image_files)
 
-    def __getitem__(self, idx) -> Tuple[Any, Any]:
+    def __getitem__(self, idx: int) -> Tuple[Any, Any]:
         image_file, label = self._image_files[idx], self._labels[idx]
         image = PIL.Image.open(image_file).convert("RGB")
 
@@ -112,3 +112,108 @@ class Flowers102(VisionDataset):
         for id in ["label", "setid"]:
             filename, md5 = self._file_dict[id]
             download_url(self._download_url_prefix + filename, str(self._base_folder), md5=md5)
+
+    classes = [
+        "pink primrose",
+        "hard-leaved pocket orchid",
+        "canterbury bells",
+        "sweet pea",
+        "english marigold",
+        "tiger lily",
+        "moon orchid",
+        "bird of paradise",
+        "monkshood",
+        "globe thistle",
+        "snapdragon",
+        "colt's foot",
+        "king protea",
+        "spear thistle",
+        "yellow iris",
+        "globe-flower",
+        "purple coneflower",
+        "peruvian lily",
+        "balloon flower",
+        "giant white arum lily",
+        "fire lily",
+        "pincushion flower",
+        "fritillary",
+        "red ginger",
+        "grape hyacinth",
+        "corn poppy",
+        "prince of wales feathers",
+        "stemless gentian",
+        "artichoke",
+        "sweet william",
+        "carnation",
+        "garden phlox",
+        "love in the mist",
+        "mexican aster",
+        "alpine sea holly",
+        "ruby-lipped cattleya",
+        "cape flower",
+        "great masterwort",
+        "siam tulip",
+        "lenten rose",
+        "barbeton daisy",
+        "daffodil",
+        "sword lily",
+        "poinsettia",
+        "bolero deep blue",
+        "wallflower",
+        "marigold",
+        "buttercup",
+        "oxeye daisy",
+        "common dandelion",
+        "petunia",
+        "wild pansy",
+        "primula",
+        "sunflower",
+        "pelargonium",
+        "bishop of llandaff",
+        "gaura",
+        "geranium",
+        "orange dahlia",
+        "pink-yellow dahlia?",
+        "cautleya spicata",
+        "japanese anemone",
+        "black-eyed susan",
+        "silverbush",
+        "californian poppy",
+        "osteospermum",
+        "spring crocus",
+        "bearded iris",
+        "windflower",
+        "tree poppy",
+        "gazania",
+        "azalea",
+        "water lily",
+        "rose",
+        "thorn apple",
+        "morning glory",
+        "passion flower",
+        "lotus",
+        "toad lily",
+        "anthurium",
+        "frangipani",
+        "clematis",
+        "hibiscus",
+        "columbine",
+        "desert-rose",
+        "tree mallow",
+        "magnolia",
+        "cyclamen",
+        "watercress",
+        "canna lily",
+        "hippeastrum",
+        "bee balm",
+        "ball moss",
+        "foxglove",
+        "bougainvillea",
+        "camellia",
+        "mallow",
+        "mexican petunia",
+        "bromelia",
+        "blanket flower",
+        "trumpet creeper",
+        "blackberry lily",
+    ]

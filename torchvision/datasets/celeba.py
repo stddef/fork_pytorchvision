@@ -1,6 +1,7 @@
 import csv
 import os
 from collections import namedtuple
+from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple, Union
 
 import PIL
@@ -16,32 +17,36 @@ class CelebA(VisionDataset):
     """`Large-scale CelebFaces Attributes (CelebA) Dataset <http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html>`_ Dataset.
 
     Args:
-        root (string): Root directory where images are downloaded to.
+        root (str or ``pathlib.Path``): Root directory where images are downloaded to.
         split (string): One of {'train', 'valid', 'test', 'all'}.
             Accordingly dataset is selected.
         target_type (string or list, optional): Type of target to use, ``attr``, ``identity``, ``bbox``,
             or ``landmarks``. Can also be a list to output a tuple with all specified target types.
             The targets represent:
 
-                - ``attr`` (np.array shape=(40,) dtype=int): binary (0, 1) labels for attributes
+                - ``attr`` (Tensor shape=(40,) dtype=int): binary (0, 1) labels for attributes
                 - ``identity`` (int): label for each person (data points with the same identity are the same person)
-                - ``bbox`` (np.array shape=(4,) dtype=int): bounding box (x, y, width, height)
-                - ``landmarks`` (np.array shape=(10,) dtype=int): landmark points (lefteye_x, lefteye_y, righteye_x,
+                - ``bbox`` (Tensor shape=(4,) dtype=int): bounding box (x, y, width, height)
+                - ``landmarks`` (Tensor shape=(10,) dtype=int): landmark points (lefteye_x, lefteye_y, righteye_x,
                   righteye_y, nose_x, nose_y, leftmouth_x, leftmouth_y, rightmouth_x, rightmouth_y)
 
             Defaults to ``attr``. If empty, ``None`` will be returned as target.
 
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.PILToTensor``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
         download (bool, optional): If true, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
+
+            .. warning::
+
+                To download the dataset `gdown <https://github.com/wkentaro/gdown>`_ is required.
     """
 
     base_folder = "celeba"
-    # There currently does not appear to be a easy way to extract 7z in python (without introducing additional
+    # There currently does not appear to be an easy way to extract 7z in python (without introducing additional
     # dependencies). The "in-the-wild" (not aligned+cropped) images are only in 7z, so they are not available
     # right now.
     file_list = [
@@ -59,7 +64,7 @@ class CelebA(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         split: str = "train",
         target_type: Union[List[str], str] = "attr",
         transform: Optional[Callable] = None,
@@ -88,7 +93,13 @@ class CelebA(VisionDataset):
             "test": 2,
             "all": None,
         }
-        split_ = split_map[verify_str_arg(split.lower(), "split", ("train", "valid", "test", "all"))]
+        split_ = split_map[
+            verify_str_arg(
+                split.lower() if isinstance(split, str) else split,
+                "split",
+                ("train", "valid", "test", "all"),
+            )
+        ]
         splits = self._load_csv("list_eval_partition.txt")
         identity = self._load_csv("identity_CelebA.txt")
         bbox = self._load_csv("list_bbox_celeba.txt", header=1)
@@ -100,7 +111,7 @@ class CelebA(VisionDataset):
         if mask == slice(None):  # if split == "all"
             self.filename = splits.index
         else:
-            self.filename = [splits.index[i] for i in torch.squeeze(torch.nonzero(mask))]
+            self.filename = [splits.index[i] for i in torch.squeeze(torch.nonzero(mask))]  # type: ignore[arg-type]
         self.identity = identity.data[mask]
         self.bbox = bbox.data[mask]
         self.landmarks_align = landmarks_align.data[mask]
@@ -143,7 +154,6 @@ class CelebA(VisionDataset):
 
     def download(self) -> None:
         if self._check_integrity():
-            print("Files already downloaded and verified")
             return
 
         for (file_id, md5, filename) in self.file_list:

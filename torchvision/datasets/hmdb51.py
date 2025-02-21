@@ -1,6 +1,7 @@
 import glob
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from torch import Tensor
 
@@ -28,7 +29,7 @@ class HMDB51(VisionDataset):
     Internally, it uses a VideoClips object to handle clip creation.
 
     Args:
-        root (string): Root directory of the HMDB51 Dataset.
+        root (str or ``pathlib.Path``): Root directory of the HMDB51 Dataset.
         annotation_path (str): Path to the folder containing the split files.
         frames_per_clip (int): Number of frames in a clip.
         step_between_clips (int): Number of frames between each clip.
@@ -59,7 +60,7 @@ class HMDB51(VisionDataset):
 
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         annotation_path: str,
         frames_per_clip: int,
         step_between_clips: int = 1,
@@ -102,7 +103,7 @@ class HMDB51(VisionDataset):
             output_format=output_format,
         )
         # we bookkeep the full version of video clips because we want to be able
-        # to return the meta data of full version rather than the subset version of
+        # to return the metadata of full version rather than the subset version of
         # video clips
         self.full_video_clips = video_clips
         self.fold = fold

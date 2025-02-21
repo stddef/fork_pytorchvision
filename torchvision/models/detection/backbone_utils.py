@@ -62,7 +62,7 @@ class BackboneWithFPN(nn.Module):
 @handle_legacy_interface(
     weights=(
         "pretrained",
-        lambda kwargs: _get_enum_from_fn(resnet.__dict__[kwargs["backbone_name"]]).from_str("IMAGENET1K_V1"),
+        lambda kwargs: _get_enum_from_fn(resnet.__dict__[kwargs["backbone_name"]])["IMAGENET1K_V1"],
     ),
 )
 def resnet_fpn_backbone(
@@ -79,8 +79,10 @@ def resnet_fpn_backbone(
 
     Examples::
 
+        >>> import torch
+        >>> from torchvision.models import ResNet50_Weights
         >>> from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
-        >>> backbone = resnet_fpn_backbone('resnet50', weights=ResNet50_Weights.DEFAULT, trainable_layers=3)
+        >>> backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=ResNet50_Weights.DEFAULT, trainable_layers=3)
         >>> # get some dummy image
         >>> x = torch.rand(1,3,64,64)
         >>> # compute the output
@@ -102,12 +104,12 @@ def resnet_fpn_backbone(
         trainable_layers (int): number of trainable (not frozen) layers starting from final block.
             Valid values are between 0 and 5, with 5 meaning all backbone layers are trainable.
         returned_layers (list of int): The layers of the network to return. Each entry must be in ``[1, 4]``.
-            By default all layers are returned.
+            By default, all layers are returned.
         extra_blocks (ExtraFPNBlock or None): if provided, extra operations will
             be performed. It is expected to take the fpn features, the original
             features and the names of the original features as input, and returns
             a new list of feature maps and their corresponding names. By
-            default a ``LastLevelMaxPool`` is used.
+            default, a ``LastLevelMaxPool`` is used.
     """
     backbone = resnet.__dict__[backbone_name](weights=weights, norm_layer=norm_layer)
     return _resnet_fpn_extractor(backbone, trainable_layers, returned_layers, extra_blocks)
@@ -121,7 +123,7 @@ def _resnet_fpn_extractor(
     norm_layer: Optional[Callable[..., nn.Module]] = None,
 ) -> BackboneWithFPN:
 
-    # select layers that wont be frozen
+    # select layers that won't be frozen
     if trainable_layers < 0 or trainable_layers > 5:
         raise ValueError(f"Trainable layers should be in the range [0,5], got {trainable_layers}")
     layers_to_train = ["layer4", "layer3", "layer2", "layer1", "conv1"][:trainable_layers]
@@ -158,7 +160,7 @@ def _validate_trainable_layers(
     if not is_trained:
         if trainable_backbone_layers is not None:
             warnings.warn(
-                "Changing trainable_backbone_layers has not effect if "
+                "Changing trainable_backbone_layers has no effect if "
                 "neither pretrained nor pretrained_backbone have been set to True, "
                 f"falling back to trainable_backbone_layers={max_value} so that all layers are trainable"
             )
@@ -177,7 +179,7 @@ def _validate_trainable_layers(
 @handle_legacy_interface(
     weights=(
         "pretrained",
-        lambda kwargs: _get_enum_from_fn(mobilenet.__dict__[kwargs["backbone_name"]]).from_str("IMAGENET1K_V1"),
+        lambda kwargs: _get_enum_from_fn(mobilenet.__dict__[kwargs["backbone_name"]])["IMAGENET1K_V1"],
     ),
 )
 def mobilenet_backbone(
@@ -208,7 +210,7 @@ def _mobilenet_extractor(
     stage_indices = [0] + [i for i, b in enumerate(backbone) if getattr(b, "_is_cn", False)] + [len(backbone) - 1]
     num_stages = len(stage_indices)
 
-    # find the index of the layer from which we wont freeze
+    # find the index of the layer from which we won't freeze
     if trainable_layers < 0 or trainable_layers > num_stages:
         raise ValueError(f"Trainable layers should be in the range [0,{num_stages}], got {trainable_layers} ")
     freeze_before = len(backbone) if trainable_layers == 0 else stage_indices[num_stages - trainable_layers]

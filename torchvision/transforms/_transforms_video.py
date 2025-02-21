@@ -20,7 +20,7 @@ __all__ = [
 
 
 warnings.warn(
-    "The 'torchvision.transforms._transforms_video' module is deprecated since 0.12 and will be removed in 0.14. "
+    "The 'torchvision.transforms._transforms_video' module is deprecated since 0.12 and will be removed in the future. "
     "Please use the 'torchvision.transforms' module instead."
 )
 
@@ -151,7 +151,7 @@ class ToTensorVideo:
 
 class RandomHorizontalFlipVideo:
     """
-    Flip the video clip along the horizonal direction with a given probability
+    Flip the video clip along the horizontal direction with a given probability
     Args:
         p (float): probability of the clip being flipped. Default value is 0.5
     """

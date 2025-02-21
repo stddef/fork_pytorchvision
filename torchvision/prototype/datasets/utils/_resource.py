@@ -2,7 +2,7 @@ import abc
 import hashlib
 import itertools
 import pathlib
-from typing import Any, Callable, IO, NoReturn, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, IO, Literal, NoReturn, Optional, Sequence, Set, Tuple, Union
 from urllib.parse import urlparse
 
 from torchdata.datapipes.iter import (
@@ -23,7 +23,6 @@ from torchvision.datasets.utils import (
     download_url,
     extract_archive,
 )
-from typing_extensions import Literal
 
 
 class OnlineResource(abc.ABC):
@@ -137,7 +136,7 @@ class OnlineResource(abc.ABC):
     def _check_sha256(self, path: pathlib.Path, *, chunk_size: int = 1024 * 1024) -> None:
         hash = hashlib.sha256()
         with open(path, "rb") as file:
-            for chunk in iter(lambda: file.read(chunk_size), b""):
+            while chunk := file.read(chunk_size):
                 hash.update(chunk)
         sha256 = hash.hexdigest()
         if sha256 != self.sha256:

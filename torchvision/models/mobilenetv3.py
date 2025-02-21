@@ -1,4 +1,3 @@
-import warnings
 from functools import partial
 from typing import Any, Callable, List, Optional, Sequence
 
@@ -20,21 +19,6 @@ __all__ = [
     "mobilenet_v3_large",
     "mobilenet_v3_small",
 ]
-
-
-class SqueezeExcitation(SElayer):
-    """DEPRECATED"""
-
-    def __init__(self, input_channels: int, squeeze_factor: int = 4):
-        squeeze_channels = _make_divisible(input_channels // squeeze_factor, 8)
-        super().__init__(input_channels, squeeze_channels, scale_activation=nn.Hardsigmoid)
-        self.relu = self.activation
-        delattr(self, "activation")
-        warnings.warn(
-            "This SqueezeExcitation class is deprecated since 0.12 and will be removed in 0.14. "
-            "Use torchvision.ops.SqueezeExcitation instead.",
-            FutureWarning,
-        )
 
 
 class InvertedResidualConfig:
@@ -298,7 +282,7 @@ def _mobilenet_v3(
     model = MobileNetV3(inverted_residual_setting, last_channel, **kwargs)
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
@@ -323,6 +307,8 @@ class MobileNet_V3_Large_Weights(WeightsEnum):
                     "acc@5": 91.340,
                 }
             },
+            "_ops": 0.217,
+            "_file_size": 21.114,
             "_docs": """These weights were trained from scratch by using a simple training recipe.""",
         },
     )
@@ -339,6 +325,8 @@ class MobileNet_V3_Large_Weights(WeightsEnum):
                     "acc@5": 92.566,
                 }
             },
+            "_ops": 0.217,
+            "_file_size": 21.107,
             "_docs": """
                 These weights improve marginally upon the results of the original paper by using a modified version of
                 TorchVision's `new training recipe
@@ -363,6 +351,8 @@ class MobileNet_V3_Small_Weights(WeightsEnum):
                     "acc@5": 87.402,
                 }
             },
+            "_ops": 0.057,
+            "_file_size": 9.829,
             "_docs": """
                 These weights improve upon the results of the original paper by using a simple training recipe.
             """,
@@ -388,7 +378,7 @@ def mobilenet_v3_large(
             weights are used.
         progress (bool, optional): If True, displays a progress bar of the
             download to stderr. Default is True.
-        **kwargs: parameters passed to the ``torchvision.models.resnet.MobileNetV3``
+        **kwargs: parameters passed to the ``torchvision.models.mobilenet.MobileNetV3``
             base class. Please refer to the `source code
             <https://github.com/pytorch/vision/blob/main/torchvision/models/mobilenetv3.py>`_
             for more details about this class.
@@ -419,7 +409,7 @@ def mobilenet_v3_small(
             weights are used.
         progress (bool, optional): If True, displays a progress bar of the
             download to stderr. Default is True.
-        **kwargs: parameters passed to the ``torchvision.models.resnet.MobileNetV3``
+        **kwargs: parameters passed to the ``torchvision.models.mobilenet.MobileNetV3``
             base class. Please refer to the `source code
             <https://github.com/pytorch/vision/blob/main/torchvision/models/mobilenetv3.py>`_
             for more details about this class.
@@ -431,15 +421,3 @@ def mobilenet_v3_small(
 
     inverted_residual_setting, last_channel = _mobilenet_v3_conf("mobilenet_v3_small", **kwargs)
     return _mobilenet_v3(inverted_residual_setting, last_channel, weights, progress, **kwargs)
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from ._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "mobilenet_v3_large": MobileNet_V3_Large_Weights.IMAGENET1K_V1.url,
-        "mobilenet_v3_small": MobileNet_V3_Small_Weights.IMAGENET1K_V1.url,
-    }
-)
